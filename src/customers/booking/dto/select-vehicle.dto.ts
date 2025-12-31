@@ -1,0 +1,38 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsEnum, IsNumber } from 'class-validator';
+
+export enum VehicleType {
+  BIKE = 'Bike',
+  TEMPO = 'Tempo',
+  TRUCK = 'Truck',
+}
+
+export class SelectVehicleDto {
+  @ApiProperty({
+    enum: VehicleType,
+    example: VehicleType.BIKE,
+    description: 'Selected vehicle type',
+  })
+  @IsEnum(VehicleType)
+  vehicleType: VehicleType;
+
+  @ApiProperty({ example: 19.076, description: 'Pickup latitude' })
+  @IsNumber()
+  pickupLat: number;
+
+  @ApiProperty({ example: 72.8777, description: 'Pickup longitude' })
+  @IsNumber()
+  pickupLng: number;
+
+  @ApiProperty({ example: 19.2183, description: 'Drop latitude' })
+  @IsNumber()
+  dropLat: number;
+
+  @ApiProperty({ example: 72.9781, description: 'Drop longitude' })
+  @IsNumber()
+  dropLng: number;
+
+  receiverName: string;
+  
+  receiverMobile: string;
+}
