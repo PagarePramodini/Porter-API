@@ -4,7 +4,7 @@ import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
 import { OwnerJwtGuard } from 'src/master/owner-jwt.guard';
 
-@ApiTags('owners')
+@ApiTags('Admin')
 @Controller('owner')
 export class OwnerController {
   constructor(private readonly ownerService: OwnerService) { }

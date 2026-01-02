@@ -6,10 +6,7 @@ export type VehicleDocument = Vehicle & Document;
 @Schema({ timestamps: true })
 export class Vehicle {
   @Prop({ required: true, unique: true })
-  name: string; // Bike | Tempo | Truck
-
-  @Prop()
-  maxLoadKg: number;
+  vehicleType: string; // Bike | Tempo | Truck
 
   @Prop({ default: true })
   isActive: boolean;

@@ -37,7 +37,7 @@ export class Booking extends Document {
   @Prop() discount: number;
   @Prop() payableAmount: number;
 
-  @Prop({ enum: BookingStatus, default: BookingStatus.CREATED })
+  @Prop({ enum: BookingStatus, })
   status: BookingStatus;
 
   @Prop({ enum: ['ONLINE', 'CASH'], default: 'ONLINE' })
@@ -118,6 +118,24 @@ export class Booking extends Document {
 
   @Prop({ required: true, index: true })
   city: string;
+
+  // GPS trail
+  @Prop({
+    type: [
+      {
+        lat: { type: Number },
+        lng: { type: Number },
+        timestamp: { type: Date },
+      },
+    ],
+    default: [],
+  })
+  routePath: {
+    lat: number;
+    lng: number;
+    timestamp: Date;
+  }[];
+
 }
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);

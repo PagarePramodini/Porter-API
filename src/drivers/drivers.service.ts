@@ -130,128 +130,137 @@ export class DriversService {
 
   // 4. DigiLocker INIT (get login URL)
   async initDigiLocker(driverId: string) {
-  const driver = await this.driverModel.findById(driverId);
-  if (!driver) throw new NotFoundException('Driver not found');
+    const driver = await this.driverModel.findById(driverId);
+    if (!driver) throw new NotFoundException('Driver not found');
 
-  return this.digiLockerService.getAuthUrl(driverId);
-}
+    return this.digiLockerService.getAuthUrl(driverId);
+  }
 
   // 5. DigiLocker CALLBACK (documents + OTP)
   async uploadDocumentsViaDigiLocker(driverId: string, authCode: string) {
-  const driver = await this.driverModel.findById(driverId);
-  if (!driver) throw new NotFoundException('Driver not found');
+    const driver = await this.driverModel.findById(driverId);
+    if (!driver) throw new NotFoundException('Driver not found');
 
-  const docs = await this.digiLockerService.fetchDocuments(authCode);
+    const docs = await this.digiLockerService.fetchDocuments(authCode);
 
-  const documents = {
-    aadhaar: docs.aadhaar,
-    panCard: docs.panCard,
-    licenseFront: docs.licenseFront,
-    licenseBack: docs.licenseBack,
-    source: 'DIGILOCKER',
-    digilockerRefId: docs.referenceId,
-    verified: true,
-  };
+    const documents = {
+      aadhaar: docs.aadhaar,
+      panCard: docs.panCard,
+      licenseFront: docs.licenseFront,
+      licenseBack: docs.licenseBack,
+      source: 'DIGILOCKER',
+      digilockerRefId: docs.referenceId,
+      verified: true,
+    };
 
-  await this.driverModel.updateOne(
-    { _id: driverId },
-    {
-      $set: {
-        documents,
-        status: 'Documents Uploaded',
+    await this.driverModel.updateOne(
+      { _id: driverId },
+      {
+        $set: {
+          documents,
+          status: 'Documents Uploaded',
+        },
       },
-    },
-  );
+    );
 
-  // 🔥 SAME OTP LOGIC AS MANUAL UPLOAD
-  await this.authService.createTempData(driver.mobile, 'driver', {
-    driverId,
-    ...driver.toObject(),
-    documents,
-  });
+    // 🔥 SAME OTP LOGIC AS MANUAL UPLOAD
+    await this.authService.createTempData(driver.mobile, 'driver', {
+      driverId,
+      ...driver.toObject(),
+      documents,
+    });
 
-  const result = await this.authService.sendOtpForRegistration(driver.mobile);
+    const result = await this.authService.sendOtpForRegistration(driver.mobile);
 
-  return {
-    message: 'Documents fetched from DigiLocker. OTP sent.',
-    otp: result.otp, // remove in prod
-  };
-}
+    return {
+      message: 'Documents fetched from DigiLocker. OTP sent.',
+      otp: result.otp, // remove in prod
+    };
+  }
 
   // 6. Driver Status 
-  async updateOnlineStatus(driverId: string, dto: UpdateDriverStatusDto) {
+  async updateOnlineStatus(
+    driverId: string,
+    dto: UpdateDriverStatusDto,
+  ) {
+    const driver = await this.driverModel.findById(driverId);
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
+
+    // ✅ check DB location instead of DTO
+    if (
+      dto.isOnline &&
+      (!driver.currentLocation ||
+        !driver.currentLocation.coordinates ||
+        driver.currentLocation.coordinates.length !== 2)
+    ) {
+      throw new BadRequestException('Update location before going online');
+    }
+
     await this.driverModel.findByIdAndUpdate(driverId, {
       isOnline: dto.isOnline,
       isAvailable: dto.isOnline,
     });
 
-    return { message: `Driver is now ${dto.isOnline ? 'ONLINE' : 'OFFLINE'}` };
+    return {
+      message: dto.isOnline ? 'Driver ONLINE' : 'Driver OFFLINE',
+    };
   }
 
   // 7. Pending Requests
   async getPendingRequests(driverId: string) {
     return this.bookingModel.find({
-      status: BookingStatus.CONFIRMED,
+      status: BookingStatus.DRIVER_NOTIFIED,
       rejectedDrivers: { $ne: driverId },
     });
   }
 
-  // 8. Accept Booking
+  // ACCEPT BOOKING 
   async acceptBooking(driverId: string, bookingId: string) {
-    // Make sure driver exists
+    const booking = await this.bookingModel.findById(bookingId);
+    if (!booking) throw new BadRequestException('Booking not found');
+
+    if (booking.status !== BookingStatus.DRIVER_NOTIFIED) {
+      throw new BadRequestException('Booking no longer available');
+    }
+
     const driver = await this.driverModel.findById(driverId);
-    if (!driver) {
-      throw new NotFoundException('Driver not found');
+    if (!driver || !driver.isAvailable) {
+      throw new BadRequestException('Driver not available');
     }
 
-    if (!driver.isAvailable) {
-      throw new BadRequestException('Driver is not available');
-    }
+    // 1️⃣ ASSIGN DRIVER (LOCK BOOKING)
+    booking.driverId = driverId;
+    booking.status = BookingStatus.DRIVER_ASSIGNED;
 
-    const booking = await this.bookingModel.findOneAndUpdate(
-      {
-        _id: bookingId,
-        status: BookingStatus.CONFIRMED, // 🔒 HARD LOCK
-        driverId: null,
-        rejectedDrivers: { $ne: driverId },
-      },
-      {
-        driverId,
-        status: BookingStatus.DRIVER_ASSIGNED,
-      },
-      { new: true },
-    );
 
-    if (!booking) {
-      throw new BadRequestException('Booking not available for acceptance');
-    }
-
-    if (!booking.pickupLocation) {
-      throw new BadRequestException('Pickup location missing in booking');
-    }
-
-    // 3️⃣ PART-2 ⭐ CALCULATE driver → pickup distance (HERE ONLY)
+    // 2️⃣ ⭐ DRIVER → PICKUP DISTANCE (YOUR CODE — KEEP IT HERE)
     const { distanceKm, durationMin } =
       await this.mapsService.getDistanceAndDuration(
-        driver.currentLocation.lat,
-        driver.currentLocation.lng,
+        driver.currentLocation.coordinates[1], // lat
+        driver.currentLocation.coordinates[0], // lng
         booking.pickupLocation.lat,
         booking.pickupLocation.lng,
       );
 
-      const pickupCharge = this.calculatePickupCharge(distanceKm);
-
+    const pickupCharge = this.calculatePickupCharge(distanceKm);
 
     booking.driverToPickupDistanceKm = distanceKm;
     booking.driverToPickupEtaMin = durationMin;
     booking.pickupCharge = pickupCharge;
+
     await booking.save();
 
-    // Mark driver busy
+    // 3️⃣ MARK DRIVER BUSY
     await this.driverModel.findByIdAndUpdate(driverId, {
       isAvailable: false,
       isOnTrip: true,
     });
+
+    // 4️⃣ START LIVE TRACKING
+    this.liveGateway.startTracking(bookingId);
 
     return {
       message: 'Booking accepted successfully',
@@ -261,62 +270,38 @@ export class DriversService {
     };
   }
 
-  // 9. Reject Booking
+  // REJECT
   async rejectBooking(driverId: string, bookingId: string) {
-    await this.bookingModel.findByIdAndUpdate(bookingId, {
-      $push: { rejectedDrivers: driverId },
-    });
+    await this.bookingModel.updateOne(
+      { _id: bookingId },
+      { $addToSet: { rejectedDrivers: driverId } },
+    );
 
-    return { message: 'Booking rejected' };
+    return { message: 'Rejected' };
   }
 
-  // 10. Start Trip
+  // START TRIP
   async startTrip(driverId: string, bookingId: string) {
-    const booking = await this.bookingModel.findById(bookingId);
+    const booking = await this.bookingModel.findOneAndUpdate(
+      {
+        _id: bookingId,
+        driverId,
+        status: BookingStatus.DRIVER_ASSIGNED,
+      },
+      {
+        $set: {
+          status: BookingStatus.TRIP_STARTED,
+          tripStartTime: new Date(),
+        },
+      },
+      { new: true },
+    );
 
-    if (!booking) {
-      throw new BadRequestException('Booking not found');
-    }
+    if (!booking) throw new BadRequestException('Invalid trip');
 
-    if (booking.driverId.toString() !== driverId) {
-      throw new BadRequestException('Unauthorized driver');
-    }
+    this.liveGateway.startTracking(bookingId);
 
-    if (booking.status !== BookingStatus.DRIVER_ASSIGNED) {
-      throw new BadRequestException('Trip cannot be started');
-    }
-
-    booking.status = BookingStatus.TRIP_STARTED;
-    booking.tripStartTime = new Date();
-
-    await booking.save();
-
-    return {
-      message: 'Trip started successfully',
-    };
-  }
-
-  // 11. Complete Trip
-  async completeTrip(driverId: string, bookingId: string) {
-    const booking = await this.bookingModel.findById(bookingId);
-
-    if (!booking) {
-      throw new BadRequestException('Booking not found');
-    }
-
-    if (booking.driverId.toString() !== driverId) {
-      throw new BadRequestException('Unauthorized driver');
-    }
-
-    if (booking.status !== BookingStatus.TRIP_STARTED) {
-      throw new BadRequestException('Trip not started yet');
-    }
-
-    booking.status = BookingStatus.TRIP_COMPLETED;
-    booking.tripEndTime = new Date();
-
-    // 1. Get actual distance
-    const { distanceKm, durationMin } =
+    const { durationMin, distanceKm } =
       await this.mapsService.getDistanceAndDuration(
         booking.pickupLocation.lat,
         booking.pickupLocation.lng,
@@ -324,106 +309,178 @@ export class DriversService {
         booking.dropLocation.lng,
       );
 
-    // 2. Calculate final fare
+    booking.pickupToDropEtaMin = durationMin;
+    booking.remainingDistanceKm = distanceKm;
+  
+    await booking.save();
+
+    return { message: 'Trip started' };
+  }
+
+  // Complete Trip
+  async completeTrip(driverId: string, bookingId: string) {
+    const booking = await this.bookingModel.findOne({
+      _id: bookingId,
+      driverId,
+      status: BookingStatus.TRIP_STARTED,
+    });
+
+    if (!booking) throw new BadRequestException('Invalid trip');
+
+    // 1️⃣ Get pricing (never trust stored fares blindly)
     const pricing = await this.pricingModel.findOne({
-      city: booking.city,
       vehicleType: booking.vehicleType,
       isActive: true,
     });
 
     if (!pricing) {
-      throw new BadRequestException('Pricing not configured');
+      throw new BadRequestException('Pricing not found');
     }
 
-    const distanceFare = distanceKm * pricing.perKmRate;
+    // 2️⃣ Core fare calculation
+    const tripDistanceKm = booking.distanceKm;
+    const baseFare = pricing.baseFare;
+    const distanceFare = tripDistanceKm * pricing.perKmRate;
+    const pickupCharge = booking.pickupCharge || 0;
 
     const finalFare =
-      booking.baseFare +
-      distanceFare +
-      (booking.pickupCharge || 0) +
-      booking.loadingCharge -
-      booking.discount;
+      Math.round(baseFare + distanceFare + pickupCharge);
 
-    const platformCommission =
-      finalFare * (pricing.commissionPercent / 100);
+    // 3️⃣ Platform commission
+    const commissionPercent = pricing.commissionPercent || 20;
+    const commissionAmount =
+      Math.round((finalFare * commissionPercent) / 100);
 
-    const driverEarning =
-      finalFare - platformCommission;
+    const driverEarning = finalFare - commissionAmount;
 
-    // 4. Save
-    booking.actualDistanceKm = distanceKm;
-    booking.actualDurationMin = durationMin;
+    // 4️⃣ Update booking
+    booking.status = BookingStatus.TRIP_COMPLETED;
+    booking.tripEndTime = new Date();
     booking.finalFare = finalFare;
     booking.driverEarning = driverEarning;
-    booking.platformCommission = platformCommission;
     booking.fareFinalizedAt = new Date();
+    booking.platformCommission = commissionAmount;
+
+    if (booking.tripStartTime) {
+      booking.actualDurationMin = Math.ceil(
+        (Date.now() - booking.tripStartTime.getTime()) / 60000
+      );
+    }
 
     await booking.save();
 
+    // 5️⃣ Update driver status
     await this.driverModel.findByIdAndUpdate(driverId, {
-      isOnTrip: false,
       isAvailable: true,
+      isOnTrip: false,
     });
 
+    // 6️⃣ Wallet credit
     await this.walletModel.findOneAndUpdate(
       { driverId },
       { $inc: { balance: driverEarning } },
-      { upsert: true }
+      { upsert: true },
     );
+
+    // 7️⃣ Stop live tracking
+    this.liveGateway.stopTracking(bookingId);
 
     return {
       message: 'Trip completed successfully',
+      fare: {
+        finalFare,
+        pickupCharge,
+        distanceFare,
+        driverEarning,
+        platformCommission: commissionAmount,
+      },
     };
   }
 
-  // 12.Driver Location Update
+
+  // ================= UPDATE DRIVER LOCATION =================
   async updateLocation(driverId: string, dto: UpdateLocationDto) {
+
+    const currentLat = dto.lat;
+    const currentLng = dto.lng;
+
+    // 1️⃣ ALWAYS update driver's live location (IMPORTANT)
     await this.driverModel.findByIdAndUpdate(driverId, {
-      currentLocation: dto,
+      currentLocation: {
+        type: 'Point',
+        coordinates: [dto.lng, dto.lat],
+      },
     });
 
+    // 2️⃣ If driver is on trip → emit to customer
     const booking = await this.bookingModel.findOne({
       driverId,
-      status: BookingStatus.TRIP_STARTED
+      status: {
+        $in: [
+          BookingStatus.DRIVER_ASSIGNED,
+          BookingStatus.TRIP_STARTED,
+        ],
+      },
     });
 
     if (booking) {
-      const { distanceKm, durationMin } =
+      booking.lastDriverLocation = {
+        lat: dto.lat,
+        lng: dto.lng,
+      };
+      await booking.save();
+
+      const { distanceKm } =
         await this.mapsService.getDistanceAndDuration(
-          dto.lat,
-          dto.lng,
+          currentLat,
+          currentLng,
           booking.dropLocation.lat,
           booking.dropLocation.lng,
         );
 
       booking.remainingDistanceKm = distanceKm;
-      booking.pickupToDropEtaMin = durationMin;
+
+      booking.routePath.push({
+        lat: currentLat,
+        lng: currentLng,
+        timestamp: new Date(),
+      });
+
+      if (booking.routePath.length > 1) {
+        const prev = booking.routePath[booking.routePath.length - 2];
+
+        const deltaKm =
+          this.mapsService.haversineDistance(
+            prev.lat,
+            prev.lng,
+            currentLat,
+            currentLng,
+          );
+
+        booking.actualDistanceKm =
+          (booking.actualDistanceKm || 0) + deltaKm;
+      }
 
       await booking.save();
 
-      this.liveGateway.emitDriverUpdate(
-        booking._id.toString(),
-        {
-          location: { lat: dto.lat, lng: dto.lng },
-          etaMin: durationMin,
-        },
-      );
-
-      this.liveGateway.emitDriverLocation(
-        booking._id.toString(),
-        { lat: dto.lat, lng: dto.lng },
-      );
-    }
-
+    this.liveGateway.emitDriverLocation(
+      booking._id.toString(),
+      {
+        lat: dto.lat,
+        lng: dto.lng,
+      },
+    );
+  }
     return { message: 'Location updated' };
   }
+
 
   // 13. Driver Earnings
   async getDriverEarnings(driverId: string) {
     // Get all trips or bookings for the driver
-    const trips = await this.bookingModel.find({ 
-      driverId, 
-      status: BookingStatus.TRIP_COMPLETED 
+    const trips = await this.bookingModel.find({
+      driverId,
+      status: BookingStatus.TRIP_COMPLETED
     });
 
     // Calculate total earnings
@@ -470,7 +527,6 @@ export class DriversService {
   }
 
   // 14. Driver Withdrawals 
-  // Get Wallet Summary
   async getWalletSummary(driverId: string) {
     const wallet = await this.walletModel.findOne({ driverId });
     const completedTripsCount = await this.bookingModel.countDocuments({
@@ -768,11 +824,11 @@ export class DriversService {
     };
   }
 
-  // Calculate driver current location to Pickup 
+  // ================= PICKUP CHARGE CALCULATION =================
   private calculatePickupCharge(distanceKm: number): number {
     if (distanceKm <= 3) return 10;
     if (distanceKm <= 5) return 20;
     if (distanceKm <= 50) return 40;
-    return 0;
+    return 50; // safety cap
   }
 }

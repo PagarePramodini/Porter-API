@@ -6,9 +6,6 @@ export type PricingDocument = Pricing & Document;
 @Schema({ timestamps: true })
 export class Pricing {
   @Prop({ required: true })
-  city: string; // e.g. Mumbai
-
-  @Prop({ required: true })
   vehicleType: string; // Bike | Tempo | Truck
 
   @Prop({ required: true })
@@ -17,7 +14,7 @@ export class Pricing {
   @Prop({ required: true })
   perKmRate: number;
 
-  @Prop({ required: true })
+  @Prop()
   commissionPercent: number; // 0.2 = 20%
 
   @Prop({ default: true })

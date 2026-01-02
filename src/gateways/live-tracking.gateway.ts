@@ -16,6 +16,8 @@ export class LiveTrackingGateway {
   constructor(
     @InjectModel(Booking.name) private readonly bookingModel: Model<BookingDocument>,) { }
 
+  private activeTrips = new Map<string, any>();
+
   // CUSTOMER + DRIVER joins booking room
   @SubscribeMessage('joinBooking')
   handleJoin(
@@ -24,6 +26,14 @@ export class LiveTrackingGateway {
   ) {
     client.join(`booking:${data.bookingId}`);
     return { joined: data.bookingId };
+  }
+
+  @SubscribeMessage('joinDriver')
+  handleDriverJoin(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() data: { driverId: string },
+  ) {
+    client.join(`driver:${data.driverId}`);
   }
 
   // Leave room (optional)
@@ -63,8 +73,24 @@ export class LiveTrackingGateway {
       .emit('driver:update', payload);
   }
 
+  startTracking(bookingId: string) {
+    const room = `booking:${bookingId}`;
+
+    // optional: keep memory state if needed later
+    this.activeTrips.set(bookingId, {
+      startedAt: new Date(),
+    });
+
+    // notify customer that tracking has started
+    this.server.to(room).emit('trip:started', {
+      bookingId,
+    });
+  }
+
   // Stop tracking
   stopTracking(bookingId: string) {
+    this.activeTrips.delete(bookingId);
+
     this.server
       .to(`booking:${bookingId}`)
       .emit('tripCompleted');

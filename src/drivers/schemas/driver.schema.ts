@@ -74,39 +74,46 @@ export class Driver {
         verified?: boolean;
     };
 
-@Prop({ default: 'pending' }) // pending → personal done → vehicle done → completed
-status: string;
+    @Prop({ default: 'pending' }) // pending → personal done → vehicle done → completed
+    status: string;
 
-@Prop({ default: true })
-isAvailable: boolean;
+    @Prop({ default: true })
+    isAvailable: boolean;
 
-@Prop({ default: false })
-isOnline: boolean;
+    @Prop({ default: false })
+    isOnline: boolean;
 
-@Prop({ default: false })
-isOnTrip: boolean;
+    @Prop({ default: false })
+    isOnTrip: boolean;
 
-@Prop({
-    type: {
-        lat: Number,
-        lng: Number,
-    },
-    default: null,
-})
-currentLocation: {
-    lat: number;
-    lng: number;
-};
+    @Prop({
+        type: {
+            type: String,
+            enum: ['Point'],
+            default: 'Point',
+        },
+        coordinates: {
+            type: [Number], // [lng, lat]
+            default: [0, 0],
+        },
+    })
+    currentLocation: {
+        type: 'Point';
+        coordinates: number[];
+    };
 
-walletBalance: number;
 
-withdrawal: {
-    amount: number;
-    status: WithdrawalStatus;
-    requestedAt ?: Date;
-    processedAt ?: Date;
-};
+    walletBalance: number;
+
+    withdrawal: {
+        amount: number;
+        status: WithdrawalStatus;
+        requestedAt?: Date;
+        processedAt?: Date;
+    };
 
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
+
+DriverSchema.index({ currentLocation: '2dsphere' });

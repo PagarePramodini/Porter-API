@@ -111,7 +111,7 @@ export class OwnerService {
       drop: b.dropLocation,
       distanceKm: b.distanceKm,
       durationMin: b.durationMin,
-      fare: b.payableAmount,
+      fare: b.finalFare,
       paymentMethod: b.paymentMethod,
       status: b.status,
     }));

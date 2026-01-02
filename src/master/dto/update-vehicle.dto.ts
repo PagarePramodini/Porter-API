@@ -6,10 +6,6 @@ export class UpdateVehicleDto {
   name?: string;
 
   @IsOptional()
-  @IsString()
-  city?: string;
-
-  @IsOptional()
   @IsBoolean()
   isActive?: boolean;
 }

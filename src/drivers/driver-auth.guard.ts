@@ -1,9 +1,10 @@
 import { Injectable, CanActivate, ExecutionContext, UnauthorizedException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
+import { Model } from "mongoose";
 
 @Injectable()
 export class DriverAuthGuard implements CanActivate {
-  constructor(private jwtService: JwtService) {}
+  constructor(private jwtService: JwtService ) {}
 
   canActivate(context: ExecutionContext): boolean {
     const req = context.switchToHttp().getRequest();
@@ -11,7 +12,7 @@ export class DriverAuthGuard implements CanActivate {
 
     if (!authHeader) {
       throw new UnauthorizedException('Missing token');
-    }
+    } 
 
     const token = authHeader.split(' ')[1];
 

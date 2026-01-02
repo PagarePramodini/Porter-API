@@ -1,20 +1,10 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsEnum, IsNumber } from 'class-validator';
-
-export enum VehicleType {
-  BIKE = 'Bike',
-  TEMPO = 'Tempo',
-  TRUCK = 'Truck',
-}
+import { IsNumber, IsString } from 'class-validator';
 
 export class SelectVehicleDto {
-  @ApiProperty({
-    enum: VehicleType,
-    example: VehicleType.BIKE,
-    description: 'Selected vehicle type',
-  })
-  @IsEnum(VehicleType)
-  vehicleType: VehicleType;
+  @ApiProperty({ example: 'Bike', description: 'Selected vehicle type',})
+  @IsString()
+  vehicleType: string;
 
   @ApiProperty({ example: 19.076, description: 'Pickup latitude' })
   @IsNumber()

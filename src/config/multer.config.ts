@@ -1,12 +1,36 @@
 import { diskStorage } from 'multer';
-import { extname } from 'path';
+import { extname, join } from 'path';
+import * as fs from 'fs';
 
 export const documentUploadConfig = {
   storage: diskStorage({
-    destination: './uploads/driver-documents',
-    filename: (req, file, callback) => {
-      const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1e9);
-      callback(null, uniqueName + extname(file.originalname));
+    destination: (req: any, file, cb) => {
+      const driverId = req.driverId;
+
+      if (!driverId) {
+        return cb(new Error('Driver ID not found in request'), '');
+      }
+
+      const uploadPath = join(
+        process.cwd(),
+        'uploads',
+        'driver-documents',
+        driverId.toString(),
+      );
+
+      // create folder if not exists
+      if (!fs.existsSync(uploadPath)) {
+        fs.mkdirSync(uploadPath, { recursive: true });
+      }
+
+      cb(null, uploadPath);
+    },
+
+    filename: (req, file, cb) => {
+      // aadhaar | panCard | licenseFront | licenseBack
+      const extension = extname(file.originalname);
+      const filename = `${file.fieldname}${extension}`;
+      cb(null, filename);
     },
   }),
 };

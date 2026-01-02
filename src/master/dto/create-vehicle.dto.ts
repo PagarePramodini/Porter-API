@@ -5,12 +5,7 @@ export class CreateVehicleDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  name: string; // Bike | Tempo | Truck
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
-  city: string; // Mumbai
+  vehicleType: string; // Bike | Tempo | Truck
 
   @ApiProperty()
   @IsOptional()

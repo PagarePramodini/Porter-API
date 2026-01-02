@@ -44,8 +44,8 @@ export class MasterController {
     }
 
     @Get('vehicle')
-    getVehicles(@Query('city') city?: string) {
-        return this.masterService.getVehicles(city);
+    getVehicles() {
+        return this.masterService.getVehicles();
     }
 
     @Patch('vehicle/:id')
@@ -65,8 +65,8 @@ export class MasterController {
     }
 
     @Get('pricing')
-    getPricing(@Query('city') city: string) {
-        return this.masterService.getPricing(city);
+    getPricing(@Query('vehicleType') vehicleType: string) {
+        return this.masterService.getPricing(vehicleType);
     }
 
     @Patch('pricing/:id')

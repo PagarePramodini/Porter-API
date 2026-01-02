@@ -7,7 +7,6 @@ import { JwtModule } from '@nestjs/jwt';
 import { DriverRegistrationGuard } from './driver-registration.guard';
 import { AuthModule } from 'src/auth/auth.module';
 import { Booking, BookingSchema } from 'src/customers/booking/schemas/booking.schema';
-import { DriverDispatchService } from './driver-dispatch.service';
 import { LiveTrackingGateway } from 'src/gateways/live-tracking.gateway';
 import { GatewaysModule } from 'src/gateways/gateways.module';
 import { Wallet, WalletSchema } from './schemas/driver-wallet.schema';
@@ -26,7 +25,7 @@ import { DigiLockerService } from './digilocker.service';
     }), forwardRef(() => AuthModule), GatewaysModule,
   ],
   controllers: [DriversController],
-  providers: [DriversService, DriverRegistrationGuard, DriverDispatchService, LiveTrackingGateway, DigiLockerService,],
-  exports: [DriversService, DriverDispatchService],
+  providers: [DriversService, DriverRegistrationGuard, LiveTrackingGateway, DigiLockerService,],
+  exports: [DriversService],
 })
 export class DriversModule { }

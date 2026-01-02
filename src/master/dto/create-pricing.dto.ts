@@ -5,11 +5,6 @@ export class CreatePricingDto {
   @ApiProperty()
   @IsString()
   @IsNotEmpty()
-  city: string;
-
-  @ApiProperty()
-  @IsString()
-  @IsNotEmpty()
   vehicleType: string;
 
   @ApiProperty()

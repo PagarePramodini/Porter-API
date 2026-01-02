@@ -1,5 +1,5 @@
 import { Controller, Post, Body, UseInterceptors, UploadedFiles, UseGuards, Req, Get, Param, Patch, Query, } from '@nestjs/common';
-import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth } from '@nestjs/swagger';
+import { ApiTags, ApiConsumes, ApiBody, ApiBearerAuth, ApiParam, ApiOperation, ApiResponse } from '@nestjs/swagger';
 import { DriversService } from './drivers.service';
 import { DriverPersonalDto } from './dto/driver-personal.dto';
 import { DriverVehicleDto } from './dto/driver-vehicle.dto';
@@ -9,6 +9,8 @@ import { DriverRegistrationGuard } from './driver-registration.guard';
 import { DriverAuthGuard } from './driver-auth.guard';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
+import { StartTripDto } from './dto/start-trip.dto';
+import { CompleteTripDto } from './dto/complete-trip.dto';
 
 @ApiTags('drivers')
 @Controller('driver')
@@ -66,7 +68,7 @@ export class DriversController {
   @UseGuards(DriverAuthGuard)
   @Get('documents/digilocker/init')
   initDigiLocker(@Req() req) {
-    return this.driversService.initDigiLocker(req.user.driverId);
+    return this.driversService.initDigiLocker(req.driverId);
   }
 
   @ApiBearerAuth()
@@ -77,10 +79,27 @@ export class DriversController {
     @Body('code') code: string,
   ) {
     return this.driversService.uploadDocumentsViaDigiLocker(
-      req.user.driverId,
+      req.driverId,
       code,
     );
   }
+
+  @ApiBearerAuth()
+  @UseGuards(DriverAuthGuard)
+  @Post('location')
+  @ApiOperation({ summary: 'Update driver live location' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        message: 'Location updated',
+      },
+    },
+  })
+  updateLocation(@Req() req, @Body() dto: UpdateLocationDto) {
+    return this.driversService.updateLocation(req.driverId, dto);
+  }
+
 
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
@@ -102,6 +121,27 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post(':bookingId/accept')
+  @ApiOperation({ summary: 'Driver accepts booking' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        message: 'Booking accepted successfully',
+        bookingId: '665f0c12a9d8e5f123456789',
+        driverToPickupDistanceKm: 2.4,
+        pickupCharge: 30,
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'Booking not available',
+      },
+    },
+  })
   acceptBooking(@Req() req, @Param('bookingId') bookingId: string) {
     return this.driversService.acceptBooking(req.driverId, bookingId);
   }
@@ -109,26 +149,66 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('trips/start')
-  startTrip(@Req() req, @Body('bookingId') bookingId: string,) {
-    return this.driversService.startTrip(req.driverId, bookingId);
+  @ApiOperation({ summary: 'Driver starts trip' })
+  @ApiBody({ type: StartTripDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip started successfully',
+    schema: {
+      example: {
+        message: 'Trip started',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid trip',
+  })
+  async startTrip(@Req() req, @Body() dto: StartTripDto,) {
+    return this.driversService.startTrip(req.driverId, dto.bookingId,);
   }
 
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('trips/complete')
-  completeTrip(@Req() req, @Body('bookingId') bookingId: string,) {
-    return this.driversService.completeTrip(req.driverId, bookingId);
-  }
-
-  @ApiBearerAuth()
-  @UseGuards(DriverAuthGuard)
-  @Post('location') updateLocation(@Req() req, @Body() dto: UpdateLocationDto) {
-    return this.driversService.updateLocation(req.driverId, dto);
+  @ApiOperation({ summary: 'Driver completes trip' })
+  @ApiBody({ type: CompleteTripDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Trip completed successfully',
+    schema: {
+      example: {
+        message: 'Trip completed successfully',
+        fare: {
+          finalFare: 340,
+          pickupCharge: 20,
+          distanceFare: 280,
+          driverEarning: 272,
+          platformCommission: 68,
+        },
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Invalid trip or pricing not found',
+  })
+  async completeTrip(@Req() req, @Body() dto: CompleteTripDto,) {
+    return this.driversService.completeTrip(req.driverId, dto.bookingId,);
   }
 
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post(':bookingId/reject')
+  @ApiOperation({ summary: 'Driver rejects booking' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        message: 'Booking rejected',
+      },
+    },
+  })
   rejectBooking(@Req() req, @Param('bookingId') bookingId: string) {
     return this.driversService.rejectBooking(req.driverId, bookingId);
   }
@@ -136,6 +216,17 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('Driver-earnings')
+  @ApiOperation({ summary: 'Get total driver earnings' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        totalEarnings: 12540,
+        completedTrips: 87,
+        pendingAmount: 840,
+      },
+    },
+  })
   async getEarnings(@Req() req) {
     const driverId = req.driverId;
     return this.driversService.getDriverEarnings(driverId);
@@ -144,6 +235,17 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('wallet-summary')
+  @ApiOperation({ summary: 'Get total driver earnings' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        totalEarnings: 12540,
+        completedTrips: 87,
+        pendingAmount: 840,
+      },
+    },
+  })
   async walletSummary(@Req() req) {
     return this.driversService.getWalletSummary(req.driverId);
   }
@@ -151,6 +253,15 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('bank-details')
+  @ApiOperation({ summary: 'Add or update driver bank details' })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      example: {
+        message: 'Bank details added successfully',
+      },
+    },
+  })
   async addBankDetails(@Req() req, @Body() body: {
     bankName: string,
     bankAccountNumber: string,
@@ -163,6 +274,26 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('Request-withdraw')
+  @ApiOperation({ summary: 'Request wallet withdrawal' })
+  @ApiResponse({
+    status: 201,
+    schema: {
+      example: {
+        message: 'Withdrawal request submitted',
+        amount: 2000,
+        status: 'PENDING',
+      },
+    },
+  })
+  @ApiResponse({
+    status: 400,
+    schema: {
+      example: {
+        statusCode: 400,
+        message: 'Insufficient wallet balance',
+      },
+    },
+  })
   async requestWithdrawal(@Req() req, @Body('amount') amount: number) {
     return this.driversService.requestWithdrawal(req.driverId, amount);
   }
@@ -170,6 +301,25 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('withdrawals-history')
+  @ApiOperation({ summary: 'Get driver withdrawal history' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: [
+        {
+          amount: 2000,
+          status: 'APPROVED',
+          requestedAt: '2025-12-20T10:00:00.000Z',
+          processedAt: '2025-12-21T09:30:00.000Z',
+        },
+        {
+          amount: 1500,
+          status: 'PENDING',
+          requestedAt: '2026-01-01T08:15:00.000Z',
+        },
+      ],
+    },
+  })
   async getWithdrawalHistory(@Req() req) {
     return this.driversService.getWithdrawalHistory(req.driverId);
   }
@@ -177,6 +327,18 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('driver-dashboard')
+  @ApiOperation({ summary: 'Get driver dashboard data' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        todayEarnings: 820,
+        activeTrip: null,
+        totalTrips: 87,
+        walletBalance: 3400,
+      },
+    },
+  })
   async getDashboard(@Req() req) {
     return this.driversService.getDriverDashboard(req.driverId);
   }
@@ -184,6 +346,25 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('trips/history')
+  @ApiOperation({ summary: 'Get driver trip history (paginated)' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        total: 87,
+        page: 1,
+        limit: 10,
+        trips: [
+          {
+            bookingId: '665f0c12a9d8e5f123456789',
+            fare: 260,
+            distanceKm: 14.8,
+            completedAt: '2025-12-30T18:45:00.000Z',
+          },
+        ],
+      },
+    },
+  })
   getTripHistory(@Req() req, @Query('page') page = '1', @Query('limit') limit = '10',) {
     return this.driversService.getTripHistory(
       req.driverId,
@@ -195,6 +376,19 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Get('profile')
+  @ApiOperation({ summary: 'Get driver profile' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        firstName: 'Ramesh',
+        lastName: 'Kumar',
+        mobile: '9XXXXXXXXX',
+        vehicleType: 'Bike',
+        isAvailable: true,
+      },
+    },
+  })
   getProfile(@Req() req) {
     return this.driversService.getDriverProfile(req.driverId);
   }
@@ -202,6 +396,15 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Patch('profile/update')
+  @ApiOperation({ summary: 'Update driver profile' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        message: 'Profile updated successfully',
+      },
+    },
+  })
   updateProfile(@Req() req, @Body() body: {
     firstName?: string;
     lastName?: string;
@@ -212,6 +415,15 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('profile/logout')
+  @ApiOperation({ summary: 'Logout driver from all sessions' })
+  @ApiResponse({
+    status: 200,
+    schema: {
+      example: {
+        message: 'Logged out successfully',
+      },
+    },
+  })
   logout(@Req() req) {
     return this.driversService.logoutDriver(req.driverId);
   }

@@ -54,18 +54,16 @@ export class MasterService {
 
     async createVehicle(dto: CreateVehicleDto) {
         const exists = await this.vehicleModel.findOne({
-            name: dto.name,
-            city: dto.city,
+            name: dto.vehicleType,
         });
 
-        if (exists) throw new BadRequestException('Vehicle already exists in city');
+        if (exists) throw new BadRequestException('Vehicle already exists');
 
         return this.vehicleModel.create(dto);
     }
 
-    async getVehicles(city?: string) {
-        const filter = city ? { city, isActive: true } : {};
-        return this.vehicleModel.find(filter).sort({ name: 1 });
+    async getVehicles() {
+        return this.vehicleModel.find().sort({ vehicleType: 1 });
     }
 
     async updateVehicle(id: string, dto: UpdateVehicleDto) {
@@ -90,7 +88,6 @@ export class MasterService {
 
     async createPricing(dto: CreatePricingDto) {
         const exists = await this.pricingModel.findOne({
-            city: dto.city,
             vehicleType: dto.vehicleType,
         });
 
@@ -99,9 +96,9 @@ export class MasterService {
         return this.pricingModel.create(dto);
     }
 
-    async getPricing(city: string) {
+    async getPricing(vehicleType: string) {
         return this.pricingModel.find({
-            city,
+            vehicleType,
             isActive: true,
         });
     }
