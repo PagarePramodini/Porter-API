@@ -9,6 +9,10 @@ import { DriverRegistrationGuard } from './driver-registration.guard';
 import { DriverAuthGuard } from './driver-auth.guard';
 import { UpdateDriverStatusDto } from './dto/update-driver-status.dto';
 import { UpdateLocationDto } from './dto/update-location.dto';
+import { domainToASCII } from 'url';
+import { DriverBankDetailsDto } from './dto/driver-bank-details.dto';
+import { RequestWithdrawDto } from './dto/request-withdraw.dto';
+import { UpdateDriverProfileDto } from './dto/update-driver-profile.dto';
 import { StartTripDto } from './dto/start-trip.dto';
 import { CompleteTripDto } from './dto/complete-trip.dto';
 
@@ -150,7 +154,6 @@ export class DriversController {
   @UseGuards(DriverAuthGuard)
   @Post('trips/start')
   @ApiOperation({ summary: 'Driver starts trip' })
-  @ApiBody({ type: StartTripDto })
   @ApiResponse({
     status: 200,
     description: 'Trip started successfully',
@@ -172,7 +175,6 @@ export class DriversController {
   @UseGuards(DriverAuthGuard)
   @Post('trips/complete')
   @ApiOperation({ summary: 'Driver completes trip' })
-  @ApiBody({ type: CompleteTripDto })
   @ApiResponse({
     status: 200,
     description: 'Trip completed successfully',
@@ -253,7 +255,7 @@ export class DriversController {
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Post('bank-details')
-  @ApiOperation({ summary: 'Add or update driver bank details' })
+  @ApiOperation({ summary: 'Add driver bank details' })
   @ApiResponse({
     status: 201,
     schema: {
@@ -262,13 +264,8 @@ export class DriversController {
       },
     },
   })
-  async addBankDetails(@Req() req, @Body() body: {
-    bankName: string,
-    bankAccountNumber: string,
-    ifscCode: string,
-    aadharLinked: boolean
-  }) {
-    return this.driversService.addBankDetails(req.driverId, body);
+  async addBankDetails(@Req() req, @Body() dto: DriverBankDetailsDto,) {
+    return this.driversService.addBankDetails(req.driverId, dto);
   }
 
   @ApiBearerAuth()
@@ -294,8 +291,8 @@ export class DriversController {
       },
     },
   })
-  async requestWithdrawal(@Req() req, @Body('amount') amount: number) {
-    return this.driversService.requestWithdrawal(req.driverId, amount);
+  async requestWithdrawal(@Req() req, @Body() dto: RequestWithdrawDto,) {
+    return this.driversService.requestWithdrawal(req.driverId, dto.amount);
   }
 
   @ApiBearerAuth()
@@ -405,11 +402,8 @@ export class DriversController {
       },
     },
   })
-  updateProfile(@Req() req, @Body() body: {
-    firstName?: string;
-    lastName?: string;
-  },) {
-    return this.driversService.updateDriverProfile(req.driverId, body);
+  updateProfile(@Req() req, @Body() dto: UpdateDriverProfileDto) {
+    return this.driversService.updateDriverProfile(req.driverId, dto);
   }
 
   @ApiBearerAuth()

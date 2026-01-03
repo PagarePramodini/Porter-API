@@ -557,9 +557,9 @@ export class DriversService {
   // Add / Update Bank Details
   async addBankDetails(driverId: string, bankDetails: {
     bankName: string,
+    accountHolderName: string,
     bankAccountNumber: string,
     ifscCode: string,
-    aadharLinked: boolean
   }) {
     const wallet = await this.walletModel.findOneAndUpdate(
       { driverId },
@@ -568,7 +568,6 @@ export class DriversService {
           bankName: bankDetails.bankName,
           bankAccountNumber: bankDetails.bankAccountNumber,
           ifscCode: bankDetails.ifscCode,
-          aadharLinked: bankDetails.aadharLinked
         }
       },
       { upsert: true, new: true }
@@ -578,9 +577,9 @@ export class DriversService {
       message: 'Bank details updated successfully',
       bankDetails: {
         bankName: wallet.bankName,
+        accountholderName: wallet.accountHolderName,
         bankAccountNumber: wallet.bankAccountNumber,
         ifscCode: wallet.ifscCode,
-        aadharLinked: wallet.aadharLinked
       }
     };
   }
@@ -589,8 +588,8 @@ export class DriversService {
   async requestWithdrawal(driverId: string, amount: number) {
     const wallet = await this.walletModel.findOne({ driverId });
 
-    if (!wallet?.bankAccountNumber || !wallet?.aadharLinked) {
-      throw new BadRequestException('Add bank details and link Aadhaar before withdrawal');
+    if (!wallet?.bankAccountNumber ) {
+      throw new BadRequestException('Add bank details before withdrawal');
     }
 
     if (amount <= 0) throw new BadRequestException('Amount must be greater than zero');

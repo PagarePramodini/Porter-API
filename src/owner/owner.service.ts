@@ -68,39 +68,46 @@ export class OwnerService {
     return this.ownerModel.findOne({ email }).lean();
   }
 
-  // 2. Get All Drivers (with wallet + withdrawal info)
+  // ================= DRIVER LIST (FIXED) =================
   async getAllDrivers() {
-    return this.driverModel.find().select(
-      'name mobile walletBalance withdrawal isAvailable',
-    );
+    const drivers = await this.driverModel
+      .find()
+      .lean();
+
+    return {
+      status: true,
+      data: drivers.map(driver => ({
+        id: driver._id,
+        name: `${driver.firstName || ''} ${driver.lastName || ''}`.trim(),
+        mobile: driver.mobile,
+        status: driver.status,
+        isAvailable: driver.isAvailable,
+        isOnline: driver.isOnline,
+      })),
+    };
   }
 
   //3. Driver FULL DETAILS
-  async getDriverDetails(driverId: string) {
-    const driver = await this.driverModel.findById(driverId);
-    if (!driver) throw new BadRequestException('Driver not found');
+   async getDriverDetails(driverId: string) {
+    const driver = await this.driverModel.findById(driverId).lean();
+    if (!driver) throw new NotFoundException('Driver not found');
 
     const trips = await this.bookingModel.find({ driverId });
-
-    const totalEarnings = trips
-      .filter(t => t.status === 'COMPLETED')
-      .reduce((sum, t) => sum + t.payableAmount, 0);
 
     return {
       driver,
       totalTrips: trips.length,
       completedTrips: trips.filter(t => t.status === 'COMPLETED').length,
-      totalEarnings,
       trips,
     };
   }
 
   // 4. Trips
-   async getAllTrips() {
+    async getAllTrips() {
     const bookings = await this.bookingModel
       .find({ driverId: { $ne: null } })
-      .populate('driverId', 'name mobile')
-      .populate('customerId', 'name mobile')
+      .populate('driverId', 'firstName lastName mobile')
+      .populate('customerId', 'firstName lastName mobile')
       .sort({ createdAt: -1 });
 
     return bookings.map(b => ({
@@ -109,44 +116,38 @@ export class OwnerService {
       customer: b.customerId,
       pickup: b.pickupLocation,
       drop: b.dropLocation,
-      distanceKm: b.distanceKm,
-      durationMin: b.durationMin,
       fare: b.finalFare,
-      paymentMethod: b.paymentMethod,
       status: b.status,
     }));
   }
 
-  // 5. Approve withdrawals
+   // 5. APPROVE WITHDRAWAL
   async approveWithdrawal(driverId: string) {
-    const driver = await this.driverModel.findById(driverId);
+    const withdraw = await this.withdrawModel.findOne({
+      driverId,
+      status: WithdrawalStatus.REQUESTED,
+    });
 
-    if (!driver || driver.withdrawal.status !== 'REQUESTED') {
-      throw new BadRequestException('No withdrawal request');
-    }
+    if (!withdraw) throw new BadRequestException('No withdrawal request');
 
-    driver.walletBalance -= driver.withdrawal.amount;
-    driver.withdrawal.status =  WithdrawalStatus.APPROVED;
-    driver.withdrawal.processedAt = new Date();
-
-    await driver.save();
+    withdraw.status = WithdrawalStatus.APPROVED;
+    await withdraw.save();
 
     return { message: 'Withdrawal approved successfully' };
   }
 
-  // 6. Reject withdrawal
+  //6. REJECT WITHDRAWAL 
   async rejectWithdrawal(driverId: string) {
-    const driver = await this.driverModel.findById(driverId);
+    const withdraw = await this.withdrawModel.findOne({
+      driverId,
+      status: WithdrawalStatus.REQUESTED,
+    });
 
-    if (!driver || driver.withdrawal.status !== 'REQUESTED') {
-      throw new BadRequestException('No withdrawal request');
-    }
+    if (!withdraw) throw new BadRequestException('No withdrawal request');
 
-    driver.withdrawal.status =  WithdrawalStatus.REJECTED;
-    driver.withdrawal.processedAt = new Date();
+    withdraw.status = WithdrawalStatus.REJECTED;
+    await withdraw.save();
 
-    await driver.save();
-
-    return { message: 'Withdrawal rejected' };
+    return { message: 'Withdrawal rejected successfully' };
   }
 }

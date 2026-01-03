@@ -45,7 +45,7 @@ export class OwnerController {
     return this.ownerService.getDriverDetails(driverId);
   }
 
-  // Trips (all driver bookings)
+  // All trips
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
   @Get('trips')
@@ -69,5 +69,3 @@ export class OwnerController {
     return this.ownerService.rejectWithdrawal(driverId);
   }
 }
-
-

@@ -1,7 +1,7 @@
-import { ApiPropertyOptional } from "@nestjs/swagger";
-import { IsOptional, IsString } from "class-validator";
+import { ApiPropertyOptional } from '@nestjs/swagger';
+import { IsOptional, IsString } from 'class-validator';
 
-export class UpdateProfileDto {
+export class UpdateDriverProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
@@ -15,5 +15,5 @@ export class UpdateProfileDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
-  email?: string;
+  city?: string;
 }

@@ -54,6 +54,7 @@ export class CustomersService {
     return this.customerModel.findOne({ email }).lean();
   }
 
+  // Register Customer
   async registerCustomer(dto: CreateCustomerDto) {
     // 1️⃣ Check mobile
     const mobileExists = await this.findByMobile(dto.mobile);
@@ -67,23 +68,34 @@ export class CustomersService {
       throw new ConflictException('Email already registered');
     }
 
-    // 3️⃣ Store TEMP data (NO DB INSERT)
+    // 3️⃣ Store TEMP data
     await this.authService.createTempData(dto.mobile, 'customer', dto);
 
-    // 4️⃣ Generate + send OTP immediately
-    const { otp } = await this.authService.createSession(
-      dto.mobile,
-      'customer',
-      dto,
-    );
+    // 4️⃣ Try OTP sending (DO NOT FAIL API)
+    try {
+      const { otp } = await this.authService.createSession(
+        dto.mobile,
+        'customer',
+        dto,
+      );
 
-    return {
-      message: 'OTP sent successfully',
-      mobile: dto.mobile,
-      otp, // ⚠️ remove in production
-    };
+      return {
+        success: true,
+        message: 'OTP sent successfully',
+        mobile: dto.mobile,
+        otp, // dev only
+      };
+    } catch (error) {
+      console.error('OTP sending failed:', error.message);
+
+      return {
+        success: true,
+        message: 'Customer saved temporarily. OTP service unavailable.',
+        mobile: dto.mobile,
+        otpRequired: true,
+      };
+    }
   }
-
 
   //customers/Dashboard
   async getDashboard(customerId: string): Promise<CustomerDashboardResponseDto> {

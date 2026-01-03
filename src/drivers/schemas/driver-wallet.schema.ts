@@ -18,10 +18,10 @@ export class Wallet {
     bankAccountNumber: string;
 
     @Prop({ default: null })
-    ifscCode: string;
+    accountHolderName: string;
 
     @Prop({ default: null })
-    aadharLinked: boolean; // we can simulate this validation
+    ifscCode: string;
 }
 
 export const WalletSchema = SchemaFactory.createForClass(Wallet);

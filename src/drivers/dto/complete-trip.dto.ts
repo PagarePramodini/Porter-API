@@ -1,11 +1,9 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsMongoId } from 'class-validator';
 
 export class CompleteTripDto {
   @ApiProperty({
-    example: '695624d5431e3264196b2870',
-    description: 'Booking ID for the trip to complete',
+    example: '6958e6b971572033a7be6f5d',
+    description: 'Booking ID to start trip',
   })
-  @IsMongoId()
   bookingId: string;
 }
