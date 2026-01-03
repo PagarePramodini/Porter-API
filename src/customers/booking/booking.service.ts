@@ -16,7 +16,7 @@ import { Vehicle } from 'src/master/schemas/vehicle.schema';
 
 @Injectable()
 export class BookingService {
- 
+
   constructor(
     private readonly mapsService: GoogleMapsService,
     private readonly liveGateway: LiveTrackingGateway,
@@ -61,14 +61,34 @@ export class BookingService {
 
     const vehicles = await this.vehicleModel.find({ isActive: true });
 
+    // Fetch pricing based ONLY on vehicleType
+    const pricingList = await this.pricingModel.find({
+      vehicleType: { $in: vehicles.map(v => v.vehicleType) },
+      isActive: true,
+    });
+
     return {
       distanceKm,
       durationMin,
-      vehicles: vehicles.map(v => ({
-        vehicleType: v.vehicleType,
-        estimatedFare: null, // optional
-        etaMin: durationMin,
-      }))
+      vehicles: vehicles.map(vehicle => {
+        const pricing = pricingList.find(
+          p => p.vehicleType === vehicle.vehicleType,
+        );
+
+        let estimatedFare: number | null = null ;
+
+        if (pricing) {
+          estimatedFare =
+            pricing.baseFare +
+            distanceKm * pricing.perKmRate;
+        }
+
+        return {
+          vehicleType: vehicle.vehicleType,
+          estimatedFare, // 🔥 estimate only
+          etaMin: durationMin,
+        };
+      }),
     };
   }
 

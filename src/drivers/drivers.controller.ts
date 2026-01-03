@@ -104,7 +104,6 @@ export class DriversController {
     return this.driversService.updateLocation(req.driverId, dto);
   }
 
-
   @ApiBearerAuth()
   @UseGuards(DriverAuthGuard)
   @Patch('driver-status')

@@ -22,8 +22,3 @@ export class Pricing {
 }
 
 export const PricingSchema = SchemaFactory.createForClass(Pricing);
-
-PricingSchema.index(
-  { city: 1, vehicleType: 1 },
-  { unique: true }
-);

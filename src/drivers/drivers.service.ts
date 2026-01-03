@@ -413,20 +413,18 @@ export class DriversService {
 
 
   // ================= UPDATE DRIVER LOCATION =================
-  async updateLocation(driverId: string, dto: UpdateLocationDto) {
+  async updateLocation(driverId: string, dto: UpdateLocationDto,) {
+     const { lat, lng } = dto;
 
-    const currentLat = dto.lat;
-    const currentLng = dto.lng;
-
-    // 1️⃣ ALWAYS update driver's live location (IMPORTANT)
+    // update driver live location
     await this.driverModel.findByIdAndUpdate(driverId, {
       currentLocation: {
         type: 'Point',
-        coordinates: [dto.lng, dto.lat],
+        coordinates: [lng, lat],
       },
     });
 
-    // 2️⃣ If driver is on trip → emit to customer
+    // find active booking
     const booking = await this.bookingModel.findOne({
       driverId,
       status: {
@@ -438,80 +436,56 @@ export class DriversService {
     });
 
     if (booking) {
-      booking.lastDriverLocation = {
-        lat: dto.lat,
-        lng: dto.lng,
-      };
-      await booking.save();
-
-      const { distanceKm } =
-        await this.mapsService.getDistanceAndDuration(
-          currentLat,
-          currentLng,
-          booking.dropLocation.lat,
-          booking.dropLocation.lng,
-        );
-
-      booking.remainingDistanceKm = distanceKm;
-
-      booking.routePath.push({
-        lat: currentLat,
-        lng: currentLng,
-        timestamp: new Date(),
-      });
-
-      if (booking.routePath.length > 1) {
-        const prev = booking.routePath[booking.routePath.length - 2];
-
-        const deltaKm =
-          this.mapsService.haversineDistance(
-            prev.lat,
-            prev.lng,
-            currentLat,
-            currentLng,
-          );
-
-        booking.actualDistanceKm =
-          (booking.actualDistanceKm || 0) + deltaKm;
-      }
-
-      await booking.save();
-
-      this.liveGateway.emitDriverLocation(
+      // 🚀 Push location to customer
+      await this.liveGateway.emitDriverLocation(
         booking._id.toString(),
-        {
-          lat: dto.lat,
-          lng: dto.lng,
-        },
+        { lat, lng },
       );
     }
-    return { message: 'Location updated' };
+
+    // calculate distance to pickup
+    if (booking) {
+      const distanceToPickup =
+        this.mapsService.haversineDistance(
+          lat,
+          lng,
+          booking.pickupLocation.lat,
+          booking.pickupLocation.lng,
+        );
+      // 50 meters threshold
+      if (
+        distanceToPickup <= 0.05 &&
+        !booking.arrivedAtPickupAt
+      ) {
+        booking.arrivedAtPickupAt = new Date();
+        await booking.save();
+      }
+    }
+      return { message: 'Location updated' };
   }
-
-
   // 13. Driver Earnings
   async getDriverEarnings(driverId: string) {
-    // Get all trips or bookings for the driver
-    const trips = await this.bookingModel.find({
-      driverId,
-      status: BookingStatus.TRIP_COMPLETED
-    });
+      // Get all trips or bookings for the driver
+      const trips = await this.bookingModel.find({
+        driverId,
+        status: BookingStatus.TRIP_COMPLETED
+      });
 
-    // Calculate total earnings
-    const totalEarnings = trips.reduce((sum, trip) => sum + (trip.driverEarning || 0), 0);
+      // Calculate total earnings
+      const totalEarnings = trips.reduce((sum, trip) => sum + (trip.driverEarning || 0), 0);
 
-    // Optionally, get wallet balance if you have a wallet model
-    const wallet = await this.walletModel.findOne({ driverId });
+      // Optionally, get wallet balance if you have a wallet model
+      const wallet = await this.walletModel.findOne({ driverId });
 
-    // Month-wise earnings
-    const monthEarnings: { [key: string]: number } = {};
+      // Month-wise earnings
+      const monthEarnings: { [key: string]: number } = {};
 
-    trips.forEach(trip => {
-      if (!trip.fareFinalizedAt || trip.driverEarning == null) return;
+      trips.forEach(trip => {
+        if (!trip.fareFinalizedAt || trip.driverEarning == null) return;
 
-      const date = new Date(trip.fareFinalizedAt);
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      // e.g., "2025-12"
+        const date = new Date(trip.fareFinalizedAt);
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+  // e.g., "2025-12"
 
       if (!monthEarnings[monthKey]) monthEarnings[monthKey] = 0;
       monthEarnings[monthKey] += trip.driverEarning;
@@ -588,7 +562,7 @@ export class DriversService {
   async requestWithdrawal(driverId: string, amount: number) {
     const wallet = await this.walletModel.findOne({ driverId });
 
-    if (!wallet?.bankAccountNumber ) {
+    if (!wallet?.bankAccountNumber) {
       throw new BadRequestException('Add bank details before withdrawal');
     }
 

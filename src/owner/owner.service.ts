@@ -87,23 +87,56 @@ export class OwnerService {
     };
   }
 
-  //3. Driver FULL DETAILS
-   async getDriverDetails(driverId: string) {
+  // 3. DRIVER DETAILS + TRIP HISTORY 
+  async getDriverDetails(driverId: string) {
     const driver = await this.driverModel.findById(driverId).lean();
     if (!driver) throw new NotFoundException('Driver not found');
 
-    const trips = await this.bookingModel.find({ driverId });
+    // All completed trips for this driver
+    const completedTrips = await this.bookingModel
+      .find({
+        driverId,
+        status: 'TRIP_COMPLETED',
+      })
+      .sort({ tripEndTime: -1 })
+      .lean();
+
+    const tripHistory = completedTrips.map(trip => ({
+      bookingId: trip._id,
+      pickup: trip.pickupLocation,
+      drop: trip.dropLocation,
+      city: trip.city,
+      vehicleType: trip.vehicleType,
+      distanceKm: trip.distanceKm,
+      durationMin: trip.actualDurationMin,
+      fare: trip.finalFare,
+      driverEarning: trip.driverEarning,
+      tripStartTime: trip.tripStartTime,
+      tripEndTime: trip.tripEndTime,
+      paymentMethod: trip.paymentMethod,
+      paymentStatus: trip.paymentStatus,
+    }));
 
     return {
-      driver,
-      totalTrips: trips.length,
-      completedTrips: trips.filter(t => t.status === 'COMPLETED').length,
-      trips,
+      driver: {
+        id: driver._id,
+        name: `${driver.firstName} ${driver.lastName}`,
+        mobile: driver.mobile,
+        isOnline: driver.isOnline,
+        isAvailable: driver.isAvailable,
+        vehicleType: driver.vehicleType,
+      },
+
+      summary: {
+        totalTrips: completedTrips.length,
+      },
+
+      trips: tripHistory,
     };
   }
 
   // 4. Trips
-    async getAllTrips() {
+  async getAllTrips() {
     const bookings = await this.bookingModel
       .find({ driverId: { $ne: null } })
       .populate('driverId', 'firstName lastName mobile')
@@ -121,7 +154,7 @@ export class OwnerService {
     }));
   }
 
-   // 5. APPROVE WITHDRAWAL
+   // 6. APPROVE WITHDRAWAL
   async approveWithdrawal(driverId: string) {
     const withdraw = await this.withdrawModel.findOne({
       driverId,
@@ -136,7 +169,7 @@ export class OwnerService {
     return { message: 'Withdrawal approved successfully' };
   }
 
-  //6. REJECT WITHDRAWAL 
+  //7. REJECT WITHDRAWAL 
   async rejectWithdrawal(driverId: string) {
     const withdraw = await this.withdrawModel.findOne({
       driverId,

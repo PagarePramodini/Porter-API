@@ -135,7 +135,10 @@ export class Booking extends Document {
     lng: number;
     timestamp: Date;
   }[];
-
+  
+  
+  @Prop({ type: Date })
+  arrivedAtPickupAt: Date;
 }
 
 export const BookingSchema = SchemaFactory.createForClass(Booking);

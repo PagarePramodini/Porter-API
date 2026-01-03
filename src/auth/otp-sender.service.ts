@@ -1,41 +1,38 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Twilio } from 'twilio';
+import axios from 'axios';
 
 @Injectable()
 export class OtpSenderService {
   private logger = new Logger(OtpSenderService.name);
-  private client: Twilio | null = null;
-  private from: string | null = null;
 
-  constructor() {
-    const sid = process.env.TWILIO_ACCOUNT_SID;
-    const token = process.env.TWILIO_AUTH_TOKEN;
-    const from = process.env.TWILIO_WHATSAPP_FROM;
-
-    if (sid && token && from) {
-      this.client = new Twilio(sid, token);
-      this.from = from;
-    }
-  }
+  private readonly apiKey = process.env.CLOUD_WHATSAPP_API_KEY;
+  private readonly baseUrl = process.env.CLOUD_WHATSAPP_BASE_URL;
 
   async sendWhatsappOtp(mobile: string, otp: string) {
-    const to = mobile.startsWith('+')
-      ? `whatsapp:${mobile}`
-      : `whatsapp:+91${mobile}`;
+    const message = `🔐 Your OTP is ${otp}\n\nValid for 5 minutes.\n\n— Team AnyGo`;
 
-    const message = `🔐 Your OTP is *${otp}*\n\nValid for 5 minutes.\n\n— Team AnyGo`;
+    if (!this.apiKey || !this.baseUrl) {
+      // DEV fallback (same behavior as before)
+      this.logger.warn(`[DEV WHATSAPP OTP] ${mobile}: ${otp}`);
+      return;
+    }
 
-    if (this.client && this.from) {
-      await this.client.messages.create({
-        from: this.from,
-        to,
-        body: message,
+    try {
+      await axios.get(this.baseUrl, {
+        params: {
+          apikey: this.apiKey,
+          mobile: mobile,   // CloudWhatsApp wants plain number (no +91, no whatsapp:)
+          msg: message,
+        },
       });
 
-      this.logger.log(`WhatsApp OTP sent to ${to}`);
-    } else {
-      // DEV fallback
-      this.logger.log(`[DEV WHATSAPP OTP] ${mobile}: ${otp}`);
+      this.logger.log(`WhatsApp OTP sent to ${mobile}`);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send WhatsApp OTP to ${mobile}`,
+        error?.response?.data || error.message,
+      );
+      throw error;
     }
   }
 }

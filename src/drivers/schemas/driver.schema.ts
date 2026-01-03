@@ -110,8 +110,7 @@ export class Driver {
         status: WithdrawalStatus;
         requestedAt?: Date;
         processedAt?: Date;
-    };
-
+    };  
 }
 
 export const DriverSchema = SchemaFactory.createForClass(Driver);
