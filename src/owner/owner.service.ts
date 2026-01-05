@@ -7,7 +7,6 @@ import { Owner, OwnerDocument } from './schemas/owner.schema';
 import { Booking, BookingDocument } from 'src/customers/booking/schemas/booking.schema';
 import { Driver, DriverDocument } from 'src/drivers/schemas/driver.schema';
 import { Withdraw, WithdrawDocument } from 'src/drivers/schemas/withdraw.schema';
-import { WithdrawalStatus } from 'src/drivers/schemas/driver.schema';
 import { GoogleMapsService } from 'src/common/google-maps.service';
 
 @Injectable()
