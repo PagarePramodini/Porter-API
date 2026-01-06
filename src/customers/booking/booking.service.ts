@@ -13,6 +13,7 @@ import { LiveTrackingGateway } from 'src/gateways/live-tracking.gateway';
 import { Pricing, PricingDocument } from './schemas/pricing.schema';
 import { City, CityDocument } from 'src/master/schemas/city.schema';
 import { Vehicle } from 'src/master/schemas/vehicle.schema';
+import { DriversService } from 'src/drivers/drivers.service';
 
 @Injectable()
 export class BookingService {
@@ -20,6 +21,7 @@ export class BookingService {
   constructor(
     private readonly mapsService: GoogleMapsService,
     private readonly liveGateway: LiveTrackingGateway,
+    private readonly driversService: DriversService,
     @InjectModel('Booking')
     private readonly bookingModel: Model<Booking>, private readonly configService: ConfigService,
     @InjectModel(Driver.name) private driverModel: Model<DriverDocument>,
@@ -144,19 +146,11 @@ export class BookingService {
     });
 
     // 🔍 Find nearby drivers
-    const drivers = await this.driverModel.find({
-      isOnline: true,
-      isAvailable: true,
+    const drivers = await this.driversService.findNearbyDrivers({
+      pickupLat: dto.pickupLat,
+      pickupLng: dto.pickupLng,
       vehicleType: dto.vehicleType,
-      currentLocation: {
-        $near: {
-          $geometry: {
-            type: 'Point',
-            coordinates: [dto.pickupLng, dto.pickupLat],
-          },
-          $maxDistance: 3000,
-        },
-      },
+      radiusKm: 3,
     });
 
     if (!drivers.length) {

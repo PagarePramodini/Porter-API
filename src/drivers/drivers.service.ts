@@ -219,66 +219,92 @@ export class DriversService {
 
   // ACCEPT BOOKING 
   async acceptBooking(driverId: string, bookingId: string) {
-    const booking = await this.bookingModel.findById(bookingId);
-    if (!booking) throw new BadRequestException('Booking not found');
+  // 1️⃣ ATOMIC LOCK — only ONE driver can win
+  const booking = await this.bookingModel.findOneAndUpdate(
+    {
+      _id: bookingId,
+      status: BookingStatus.DRIVER_NOTIFIED,
+      rejectedDrivers: { $ne: driverId },
+    },
+    {
+      $set: {
+        driverId,
+        status: BookingStatus.DRIVER_ASSIGNED,
+      },
+    },
+    { new: true },
+  );
 
-    if (booking.status !== BookingStatus.DRIVER_NOTIFIED) {
-      throw new BadRequestException('Booking no longer available');
-    }
-
-    const driver = await this.driverModel.findById(driverId);
-    if (!driver || !driver.isAvailable) {
-      throw new BadRequestException('Driver not available');
-    }
-
-    // 1️⃣ ASSIGN DRIVER (LOCK BOOKING)
-    booking.driverId = driverId;
-    booking.status = BookingStatus.DRIVER_ASSIGNED;
-
-
-    // 2️⃣ ⭐ DRIVER → PICKUP DISTANCE (YOUR CODE — KEEP IT HERE)
-    const { distanceKm, durationMin } =
-      await this.mapsService.getDistanceAndDuration(
-        driver.currentLocation.coordinates[1], // lat
-        driver.currentLocation.coordinates[0], // lng
-        booking.pickupLocation.lat,
-        booking.pickupLocation.lng,
-      );
-
-    const pickupCharge = this.calculatePickupCharge(distanceKm);
-
-    booking.driverToPickupDistanceKm = distanceKm;
-    booking.driverToPickupEtaMin = durationMin;
-    booking.pickupCharge = pickupCharge;
-
-    await booking.save();
-
-    // 3️⃣ MARK DRIVER BUSY
-    await this.driverModel.findByIdAndUpdate(driverId, {
-      isAvailable: false,
-      isOnTrip: true,
-    });
-
-    // 4️⃣ START LIVE TRACKING
-    this.liveGateway.startTracking(bookingId);
-
-    return {
-      message: 'Booking accepted successfully',
-      bookingId: booking._id,
-      driverToPickupDistanceKm: distanceKm,
-      pickupCharge,
-    };
+  if (!booking) {
+    throw new BadRequestException('Booking already taken or unavailable');
   }
 
-  // REJECT
-  async rejectBooking(driverId: string, bookingId: string) {
-    await this.bookingModel.updateOne(
-      { _id: bookingId },
-      { $addToSet: { rejectedDrivers: driverId } },
+  // 2️⃣ DRIVER CHECK
+  const driver = await this.driverModel.findOne({
+    _id: driverId,
+    isAvailable: true,
+    isOnline: true,
+  });
+
+  if (!driver) {
+    throw new BadRequestException('Driver not available');
+  }
+
+  // 3️⃣ DRIVER → PICKUP DISTANCE
+  const { distanceKm, durationMin } =
+    await this.mapsService.getDistanceAndDuration(
+      driver.currentLocation.coordinates[1], // lat
+      driver.currentLocation.coordinates[0], // lng
+      booking.pickupLocation.lat,
+      booking.pickupLocation.lng,
     );
 
-    return { message: 'Rejected' };
-  }
+  const pickupCharge = this.calculatePickupCharge(distanceKm);
+
+  booking.driverToPickupDistanceKm = distanceKm;
+  booking.driverToPickupEtaMin = durationMin;
+  booking.pickupCharge = pickupCharge;
+  await booking.save();
+
+  // 4️⃣ MARK DRIVER BUSY
+  await this.driverModel.findByIdAndUpdate(driverId, {
+    isAvailable: false,
+    isOnTrip: true,
+  });
+
+  // 5️⃣ NOTIFY CUSTOMER
+  this.liveGateway.server
+    .to(`customer:${booking.customerId}`)
+    .emit('booking:accepted', {
+      bookingId,
+      driverId,
+      etaMin: durationMin,
+    });
+
+  // 6️⃣ START LIVE TRACKING
+  this.liveGateway.startTracking(bookingId);
+
+  return {
+    message: 'Booking accepted successfully',
+    bookingId,
+    driverToPickupDistanceKm: distanceKm,
+    pickupCharge,
+  };
+}
+
+  // REJECT BOOKING
+  async rejectBooking(driverId: string, bookingId: string) {
+  await this.bookingModel.updateOne(
+    {
+      _id: bookingId,
+    },
+    {
+      $addToSet: { rejectedDrivers: driverId },
+    },
+  );
+
+  return { message: 'Booking rejected' };
+}
 
   // START TRIP
   async startTrip(driverId: string, bookingId: string) {
@@ -368,11 +394,12 @@ export class DriversService {
     }
 
     if (booking.paymentMethod === 'ONLINE') {
-      // Online payment already done earlier
-      booking.paymentStatus = PaymentStatus.SUCCESS;
+      //Store Razorpay details
+      booking.razorpayPaymentId;
+      booking.razorpayOrderId;
+      booking.razorpaySignature;
 
-      // razorpayPaymentId, orderId, signature
-      // are assumed to be saved at payment success time
+      booking.paymentStatus = PaymentStatus.SUCCESS;
     } else {
       // CASH payment
       booking.paymentMethod = 'CASH';
@@ -404,9 +431,12 @@ export class DriversService {
         driverEarning,
         platformCommission: commissionAmount,
       },
+      payment: {
+        method: booking.paymentMethod,
+        status: booking.paymentStatus,
+      },
     };
   }
-
 
   // ================= UPDATE DRIVER LOCATION =================
   async updateLocation(driverId: string, dto: UpdateLocationDto,) {
@@ -459,6 +489,38 @@ export class DriversService {
     }
     return { message: 'Location updated' };
   }
+
+  // ================= GEO-NEARBY DRIVER QUERY =================
+async findNearbyDrivers(params: {
+  pickupLat: number;
+  pickupLng: number;
+  vehicleType: string;
+  radiusKm?: number;
+}) {
+  const {
+    pickupLat,
+    pickupLng,
+    vehicleType,
+    radiusKm = 3, // default 3km
+  } = params;
+
+  return this.driverModel.find({
+    isOnline: true,
+    isAvailable: true,
+    vehicleType,
+    currentLocation: {
+      $near: {
+        $geometry: {
+          type: 'Point',
+          coordinates: [pickupLng, pickupLat],
+        },
+        $maxDistance: radiusKm * 1000, // meters
+      },
+    },
+  })
+  .select('_id firstName lastName currentLocation') // keep payload light
+  .limit(10); // safety limit
+}
 
   // 13. Driver Earnings
   async getDriverEarnings(driverId: string) {

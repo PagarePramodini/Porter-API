@@ -32,7 +32,7 @@ export class OwnerController {
   // All Drivers 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Get('all-drivers')
+  @Get('drivers')
   getDrivers() {
     return this.ownerService.getAllDrivers();
   }
