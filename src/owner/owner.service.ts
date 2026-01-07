@@ -366,10 +366,10 @@ export class OwnerService {
   async getOngoingTrips() {
     return this.bookingModel
       .find({
-        status: { $in: ['DRIVER_ASSIGNED', 'TRIP_STARTED'] },
+        status: { $in: ['NO_DRIVER_FOUND','DRIVER_ASSIGNED', 'TRIP_STARTED'] },
       })
       .populate('driverId', 'firstName lastName mobile')
-      .populate('customerId', 'name mobile')
+      .populate('customerId', 'firstName lastName mobile')
       .select(
         'pickupLocation dropLocation estimatedFare status createdAt'
       )

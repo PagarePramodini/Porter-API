@@ -204,6 +204,7 @@ export class DriversService {
       isAvailable: dto.isOnline,
     });
 
+    //Driver Goes Online - Notify Bookings
     if (dto.isOnline) {
       await this.bookingModel.updateMany(
         {
@@ -217,6 +218,18 @@ export class DriversService {
       );
     }
 
+    // Driver Goes Offline -> Reset Booking
+    if (!dto.isOnline) {
+      await this.bookingModel.updateMany(
+        {
+          status: BookingStatus.DRIVER_NOTIFIED,
+        },
+        {
+          $set: { status: BookingStatus.NO_DRIVER_FOUND },
+        },
+      );
+    }
+    
     return {
       message: dto.isOnline ? 'Driver ONLINE' : 'Driver OFFLINE',
     };

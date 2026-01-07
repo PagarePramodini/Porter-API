@@ -109,11 +109,10 @@ export class CustomersService {
       customerId,
       status: {
         $in: [
-          'VEHICLE_SELECTED',
-          'PAYMENT_PREVIEW',
-          'PAYMENT_INITIATED',
-          'CONFIRMED',
+          'DRIVER_NOTIFIED',
           'DRIVER_ASSIGNED',
+          'TRIP_STARTED',
+          'SEARCHING_DRIVER',
         ],
       },
     }).sort({ createdAt: -1 });

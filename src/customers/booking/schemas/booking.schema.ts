@@ -1,5 +1,5 @@
 import { Prop, SchemaFactory, Schema } from "@nestjs/mongoose";
-import { Document } from "mongoose";
+import { Document, Types } from "mongoose";
 import { BookingStatus } from "../dto/booking-status.dto";
 import { PaymentStatus } from "../dto/payment-status.dto";
 
@@ -7,7 +7,12 @@ export type BookingDocument = Booking & Document;
 
 @Schema({ timestamps: true })
 export class Booking extends Document {
-  @Prop({ required: true }) customerId: string;
+  @Prop({
+    type: Types.ObjectId,
+    ref: 'Customer',
+    required: true,
+  })
+  customerId: Types.ObjectId;
 
   @Prop() pickupAddress: string;
   @Prop() dropAddress: string;
