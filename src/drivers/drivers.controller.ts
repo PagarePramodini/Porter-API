@@ -75,15 +75,33 @@ export class DriversController {
     return this.driversService.initDigiLocker(req.driverId);
   }
 
-  @ApiBearerAuth()
-  @UseGuards(DriverAuthGuard)
   @Post('documents/digilocker/callback')
+  @ApiOperation({
+    summary: 'DigiLocker callback',
+    description: 'Called by DigiLocker servers after driver consent',
+  })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        state: {
+          type: 'string',
+          example: 'driverObjectId',
+        },
+        code: {
+          type: 'string',
+          example: 'digilocker_auth_code',
+        },
+      },
+      required: ['state', 'code'],
+    },
+  })
   uploadViaDigiLocker(
-    @Req() req,
+    @Body('state') driverId: string,
     @Body('code') code: string,
   ) {
     return this.driversService.uploadDocumentsViaDigiLocker(
-      req.driverId,
+      driverId,
       code,
     );
   }

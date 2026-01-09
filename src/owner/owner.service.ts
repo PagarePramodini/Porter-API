@@ -10,6 +10,7 @@ import { Withdraw, WithdrawDocument } from 'src/drivers/schemas/withdraw.schema'
 import { GoogleMapsService } from 'src/common/google-maps.service';
 import { Customer, CustomerDocument } from 'src/customers/schemas/customer.schema';
 import { UpdateProfileDto } from './dto/profile-update.dto';
+import { BookingStatus } from 'src/customers/booking/dto/booking-status.dto';
 
 @Injectable()
 export class OwnerService {
@@ -300,8 +301,8 @@ export class OwnerService {
       .populate('driverId', 'firstName lastName mobile')
       .sort({ createdAt: -1 });
   }
- 
-  //9. ================= CUSTOMER LIST (FIXED) ================= 
+
+  //9. CUSTOMER LIST (FIXED) 
   async getAllCustomers() {
     const customers = await this.customerModel
       .find()
@@ -333,9 +334,9 @@ export class OwnerService {
       this.driverModel.countDocuments(),  //totalDrivers
       this.customerModel.countDocuments(), //totalCustomers
       this.bookingModel.countDocuments({ status: 'CANCELLED' }), //cancelled Trips
-      this.bookingModel.countDocuments({status: 'TRIP_COMPLETED',}), //completed Trips
+      this.bookingModel.countDocuments({ status: 'TRIP_COMPLETED', }), //completed Trips
       this.bookingModel.countDocuments({
-        status: { $in: ['DRIVER_NOTIFIED','DRIVER_ASSIGNED', 'TRIP_STARTED'] },
+        status: { $in: ['DRIVER_NOTIFIED', 'DRIVER_ASSIGNED', 'TRIP_STARTED'] },
       }), //Ongoing Trips
       this.bookingModel.aggregate([
         {
@@ -363,79 +364,162 @@ export class OwnerService {
     };
   }
 
+  // Ongoing Trips
   async getOngoingTrips() {
-    return this.bookingModel
+    const bookings = await this.bookingModel
       .find({
-        status: { $in: ['NO_DRIVER_FOUND','DRIVER_ASSIGNED', 'TRIP_STARTED'] },
+        status: {
+          $in: [
+            'DRIVER_NOTIFIED',
+            'DRIVER_ASSIGNED',
+            'TRIP_STARTED',
+          ],
+        },
       })
-      .populate('driverId', 'firstName lastName mobile')
-      .populate('customerId', 'firstName lastName mobile')
-      .select(
-        'pickupLocation dropLocation estimatedFare status createdAt'
-      )
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
+
+    const driverIds = bookings
+      .map(b => b.driverId)
+      .filter(id => typeof id === 'string');
+
+    const customerIds = bookings
+      .map(b => b.customerId)
+      .filter(id => typeof id === 'string');
+
+    const [drivers, customers] = await Promise.all([
+      this.driverModel
+        .find({ _id: { $in: driverIds } })
+        .select('firstName lastName mobile')
+        .lean(),
+
+      this.customerModel
+        .find({ _id: { $in: customerIds } })
+        .select('firstName lastName mobile')
+        .lean(),
+    ]);
+
+    const driverMap = new Map(
+      drivers.map(d => [d._id.toString(), d]),
+    );
+
+    const customerMap = new Map(
+      customers.map(c => [c._id.toString(), c]),
+    );
+
+    return Promise.all(
+      bookings.map(async b => {
+        const driver = b.driverId
+          ? driverMap.get(b.driverId.toString())
+          : null;
+
+        const customer = b.customerId
+          ? customerMap.get(b.customerId.toString())
+          : null;
+
+        const pickupAddress = b.pickupLocation
+          ? await this.mapsService.getCityFromLatLng(
+            b.pickupLocation.lat,
+            b.pickupLocation.lng,
+          )
+          : null;
+
+        const dropAddress = b.dropLocation
+          ? await this.mapsService.getCityFromLatLng(
+            b.dropLocation.lat,
+            b.dropLocation.lng,
+          )
+          : null;
+
+        return {
+          bookingId: b._id,
+
+          driverName: driver
+            ? `${driver.firstName || ''} ${driver.lastName || ''}`.trim()
+            : 'Not Assigned',
+
+          driverMobile: driver?.mobile || '—',
+
+          customerName: customer
+            ? `${customer.firstName || ''} ${customer.lastName || ''}`.trim()
+            : '—',
+
+          customerMobile: customer?.mobile || '—',
+
+          pickupPoint: {
+            lat: b.pickupLocation?.lat,
+            lng: b.pickupLocation?.lng,
+            address: pickupAddress,
+          },
+
+          dropPoint: {
+            lat: b.dropLocation?.lat,
+            lng: b.dropLocation?.lng,
+            address: dropAddress,
+          },
+          status: b.status
+        };
+      }),
+    );
   }
 
   // Month-wose Trip Amount (BAR CHART)
   async getMonthWiseRevenue() {
     const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    return this.bookingModel.aggregate([
-      {
-        $match: {
-          status: { $in: ['TRIP_COMPLETED', 'COMPLETED'] },
-          createdAt: { $gte: startOfYear },
-        },
-      },
-      {
-        $group: {
-          _id: { $month: '$createdAt' }, // 1 = Jan
-          amount: { $sum: '$finalFare' },
-        },
-      },
-      { $sort: { _id: 1 } },
+    const data = await this.bookingModel.aggregate([
+      { $match: { status: { $in: ['TRIP_COMPLETED', 'COMPLETED'] }, createdAt: { $gte: startOfYear } } },
+      { $group: { _id: { $month: '$createdAt' }, amount: { $sum: '$finalFare' } } }
     ]);
+
+    const map = new Map(data.map(d => [d._id, d.amount]));
+    return monthNames.map((m, i) => ({
+      month: m, amount: map.get(i + 1) || 0
+    }));
   }
 
-  //Weekly Trips (LINE CHART)
+  // Weekly Trips (LINE CHART)
   async getWeeklyTrips() {
-    const startOfWeek = new Date();
-    startOfWeek.setDate(startOfWeek.getDate() - 6);
+    const today = new Date();
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - 34); // last 5 weeks
 
-    return this.bookingModel.aggregate([
-      {
-        $match: {
-          createdAt: { $gte: startOfWeek },
-        },
-      },
-      {
-        $group: {
-          _id: {
-            $dateToString: { format: '%Y-%m-%d', date: '$createdAt' },
-          },
-          trips: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
+    const data = await this.bookingModel.aggregate([
+      { $match: { createdAt: { $gte: startDate } } },
+      { $group: { _id: { $isoWeek: '$createdAt' }, trips: { $sum: 1 } } },
+      { $sort: { _id: 1 } }
     ]);
+
+    // Use the earliest week from the data as the starting week
+    const firstWeek = data.length ? Math.min(...data.map(d => d._id)) : this.getISOWeek(today);
+    const weeks = Array.from({ length: 5 }, (_, i) => firstWeek + i); // minimal change here
+
+    const map = new Map(data.map(d => [d._id, d.trips]));
+
+    return weeks.map((w, i) => ({ week: `Week ${i + 1}`, count: map.get(w) || 0 }));
   }
 
   //Monthly Vehicle Registrations (LINE CHART)
   async getMonthlyVehicleRegistrations() {
     const startOfYear = new Date(new Date().getFullYear(), 0, 1);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    return this.driverModel.aggregate([
-      {
-        $match: { createdAt: { $gte: startOfYear } },
-      },
-      {
-        $group: {
-          _id: { $month: '$createdAt' },
-          count: { $sum: 1 },
-        },
-      },
-      { $sort: { _id: 1 } },
+    const data = await this.driverModel.aggregate([
+      { $match: { createdAt: { $gte: startOfYear } } },
+      { $group: { _id: { $month: '$createdAt' }, count: { $sum: 1 } } }
     ]);
+
+    const map = new Map(data.map(d => [d._id, d.count]));
+    return monthNames.map((m, i) => ({ month: m, count: map.get(i + 1) || 0 }));
+  }
+
+  private getISOWeek(date: Date) {
+    const tmp = new Date(date.getTime());
+    tmp.setHours(0, 0, 0, 0);
+    tmp.setDate(tmp.getDate() + 4 - (tmp.getDay() || 7));
+    const yearStart = new Date(tmp.getFullYear(), 0, 1);
+    return Math.ceil((((tmp.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
   }
 
   // ONE Method for ADMIN Dashboard
@@ -470,37 +554,147 @@ export class OwnerService {
 
   // Owner Profile
   async getProfile(ownerId: string) {
-      const owner = await this.ownerModel.findById(ownerId).select(
-        'firstName lastName mobile email'
-      );
-  
-      if (!owner) {
-        throw new BadRequestException('Owner not found');
-      }
-  
-      return {
-        firstName: owner.firstName,
-        lastName: owner.lastName,
-        mobile: owner.mobile,
-        email: owner.email,
-      };
+    const owner = await this.ownerModel.findById(ownerId).select(
+      'firstName lastName mobile email'
+    );
+
+    if (!owner) {
+      throw new BadRequestException('Owner not found');
     }
 
-    //Update Owner Profile 
-      async updateProfile(ownerId: string, dto: UpdateProfileDto) {
-        const owner = await this.ownerModel.findByIdAndUpdate(
-          ownerId,
-          { $set: dto },
-          { new: true }
-        ).select('firstName lastName mobile email');
-    
-        if (!owner) {
-          throw new BadRequestException('Owner not found');
-        }
-    
-        return {
-          message: 'Profile updated successfully',
-          profile: owner,
-        };
-      }
+    return {
+      firstName: owner.firstName,
+      lastName: owner.lastName,
+      mobile: owner.mobile,
+      email: owner.email,
+    };
+  }
+
+  //Update Owner Profile 
+  async updateProfile(ownerId: string, dto: UpdateProfileDto) {
+    const owner = await this.ownerModel.findByIdAndUpdate(
+      ownerId,
+      { $set: dto },
+      { new: true }
+    ).select('firstName lastName mobile email');
+
+    if (!owner) {
+      throw new BadRequestException('Owner not found');
+    }
+
+    return {
+      message: 'Profile updated successfully',
+      profile: owner,
+    };
+  }
+
+  // Driver Payment 
+  async getDriverPaymentSummary() {
+    // 📅 Today range
+    const startOfDay = new Date();
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date();
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const data = await this.driverModel.aggregate([
+      // 1️⃣ Base drivers
+      {
+        $match: { isDeleted: { $ne: true } },
+      },
+
+      // 2️⃣ All completed trips
+      {
+        $lookup: {
+          from: 'bookings',
+          let: { driverId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$driverId', '$$driverId'] },
+                    { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'completedTrips',
+        },
+      },
+
+      // 3️⃣ Today’s completed trips
+      {
+        $lookup: {
+          from: 'bookings',
+          let: { driverId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$driverId', '$$driverId'] },
+                    { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
+                    { $gte: ['$tripEndTime', startOfDay] },
+                    { $lte: ['$tripEndTime', endOfDay] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'todayTrips',
+        },
+      },
+
+      // 4️⃣ Approved withdrawals
+      {
+        $lookup: {
+          from: 'withdraws',
+          let: { driverId: '$_id' },
+          pipeline: [
+            {
+              $match: {
+                $expr: {
+                  $and: [
+                    { $eq: ['$driverId', '$$driverId'] },
+                    { $eq: ['$status', 'APPROVED'] },
+                  ],
+                },
+              },
+            },
+          ],
+          as: 'withdrawals',
+        },
+      },
+
+      // 5️⃣ Final computed fields
+      {
+        $project: {
+          driverName: {
+            $concat: ['$firstName', ' ', '$lastName'],
+          },
+          mobile: '$mobile',
+
+          totalTrips: { $size: '$completedTrips' },
+
+          daywiseEarnings: {
+            $sum: '$todayTrips.driverEarning',
+          },
+
+          withdrawalAmount: {
+            $sum: '$withdrawals.amount',
+          },
+        },
+      },
+
+      // 6️⃣ Sort by today earnings (optional)
+      {
+        $sort: { daywiseEarnings: -1 },
+      },
+    ]);
+
+    return data;
+  }
+
 }

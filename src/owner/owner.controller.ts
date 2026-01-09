@@ -119,4 +119,10 @@ export class OwnerController {
     return this.ownerService.updateProfile(req.owner.userId, dto);
   }
   
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('payments/drivers')
+  getDriverPayments() {
+    return this.ownerService.getDriverPaymentSummary();
+  }
 }
