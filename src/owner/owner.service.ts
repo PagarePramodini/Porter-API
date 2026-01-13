@@ -86,6 +86,15 @@ export class OwnerService {
         status: driver.status,
         isAvailable: driver.isAvailable,
         isOnline: driver.isOnline,
+        documents: driver.documents
+          ? {
+            uploaded: true,
+            source: driver.documents.source || 'MANUAL',
+            verified: driver.documents.verified || false,
+          }
+          : {
+            uploaded: false,
+          },
       })),
     };
   }
@@ -98,6 +107,8 @@ export class OwnerService {
       throw new NotFoundException('Driver not found');
     }
 
+    const BASE_URL = process.env.FILE_BASE_URL || 'http://localhost:3000/uploads';
+
     return {
       driver: {
         id: driver._id,
@@ -105,12 +116,39 @@ export class OwnerService {
         mobile: driver.mobile,
         isOnline: driver.isOnline,
         isAvailable: driver.isAvailable,
-        vehicleType: driver.vehicleType,
-        vehicleModel: driver.vehicleModel,
-        vehicleNumber: driver.vehicleNumber,
-        vehicleMake: driver.vehicleMake,
-        chassisNumber: driver.chassisNumber,
-        status: driver.status
+
+        vehicle: {
+          type: driver.vehicleType,
+          model: driver.vehicleModel,
+          number: driver.vehicleNumber,
+          make: driver.vehicleMake,
+          chassisNumber: driver.chassisNumber,
+        },
+
+        status: driver.status,
+
+        documents: driver.documents
+          ? {
+            source: driver.documents.source || 'MANUAL',
+            verified: driver.documents.verified || false,
+
+            aadhaar: driver.documents.aadhaar
+              ? `${BASE_URL}/${driver.documents.aadhaar}`
+              : null,
+
+            panCard: driver.documents.panCard
+              ? `${BASE_URL}/${driver.documents.panCard}`
+              : null,
+
+            licenseFront: driver.documents.licenseFront
+              ? `${BASE_URL}/${driver.documents.licenseFront}`
+              : null,
+
+            licenseBack: driver.documents.licenseBack
+              ? `${BASE_URL}/${driver.documents.licenseBack}`
+              : null,
+          }
+          : null,
       },
     };
   }
@@ -632,7 +670,7 @@ export class OwnerService {
           as: 'monthlyTrips',
         },
       },
-      
+
       // 3️⃣ Month-wise approved withdrawals
       {
         $lookup: {
