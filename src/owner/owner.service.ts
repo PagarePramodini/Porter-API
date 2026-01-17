@@ -946,61 +946,61 @@ export class OwnerService {
 
   // Cancallation Report
   async getCancellationReport(filters: {
-  from?: string;
-  to?: string;
-  driverId?: string;
-}) {
-  const match: any = { status: 'CANCELLED' };
+    from?: string;
+    to?: string;
+    driverId?: string;
+  }) {
+    const match: any = { status: 'CANCELLED' };
 
-  if (filters.from || filters.to) {
-    match.createdAt = {};
-    if (filters.from) match.createdAt.$gte = new Date(filters.from);
-    if (filters.to) match.createdAt.$lte = new Date(filters.to);
-  }
+    if (filters.from || filters.to) {
+      match.createdAt = {};
+      if (filters.from) match.createdAt.$gte = new Date(filters.from);
+      if (filters.to) match.createdAt.$lte = new Date(filters.to);
+    }
 
-  if (filters.driverId) match.driverId = filters.driverId;
-  
-  return this.bookingModel.aggregate([
-    { $match: match },
+    if (filters.driverId) match.driverId = filters.driverId;
 
-    {
-      $lookup: {
-        from: 'drivers',
-        let: { driverId: { $toObjectId: '$driverId' } },
-        pipeline: [
-          {
-            $match: {
-              $expr: { $eq: ['$_id', '$$driverId'] },
+    return this.bookingModel.aggregate([
+      { $match: match },
+
+      {
+        $lookup: {
+          from: 'drivers',
+          let: { driverId: { $toObjectId: '$driverId' } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$_id', '$$driverId'] },
+              },
+            },
+          ],
+          as: 'driver',
+        },
+      },
+
+      { $unwind: '$driver' },
+
+      {
+        $group: {
+          _id: '$driver._id',
+          driverName: {
+            $first: {
+              $concat: ['$driver.firstName', ' ', '$driver.lastName'],
             },
           },
-        ],
-        as: 'driver',
-      },
-    },
-
-    { $unwind: '$driver' },
-
-    {
-      $group: {
-        _id: '$driver._id',
-        driverName: {
-          $first: {
-            $concat: ['$driver.firstName', ' ', '$driver.lastName'],
-          },
+          count: { $sum: 1 },
         },
-        count: { $sum: 1 },
       },
-    },
 
-    {
-      $project: {
-        _id: 0,
-        driverName: 1,
-        count: 1,
+      {
+        $project: {
+          _id: 0,
+          driverName: 1,
+          count: 1,
+        },
       },
-    },
-  ]);
-}
+    ]);
+  }
 
 
 }
