@@ -1,5 +1,5 @@
 import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
 import { OwnerJwtGuard } from 'src/master/owner-jwt.guard';
@@ -124,6 +124,7 @@ export class OwnerController {
     };
   }
 
+  // Admin/Owner Proflie 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
   @Get('profile')
@@ -131,6 +132,7 @@ export class OwnerController {
     return this.ownerService.getProfile(req.owner.userId);
   }
 
+  // Admin/Owner Update Proflie 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
   @Put('profile/update')
@@ -138,16 +140,86 @@ export class OwnerController {
     return this.ownerService.updateProfile(req.owner.userId, dto);
   }
   
+  // Driver Payment Summary 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
   @Get('payments/drivers')
+  @ApiQuery({ name: 'month', required: false })
+  @ApiQuery({ name: 'year', required: false })
   getDriverPayments(
     @Query('month') month?: number,
-    @Query('year') year?: number,
+    @Query('year') year?: number, 
   ) {
     return this.ownerService.getDriverPaymentSummary(
       month ? Number(month) : undefined,
       year ? Number(year) : undefined,
     );
   }
+
+  // Driver Performance Report
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/driver-performance')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverId', required: false })
+  getDriverPerformance( @Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverId') driverId?: string,) {
+    return this.ownerService.getDriverPerformanceReport({
+      from,
+      to,
+      driverId,
+    });
+  }
+
+  // Trip Report
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/trips')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverId', required: false })
+  getTripReport(@Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverId') driverId?: string,) {
+    return this.ownerService.getTripReport({
+      from,
+      to,
+      driverId,
+    });
+  }
+
+  // Cancellation Report
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/cancellations')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverId', required: false })
+  getCancellationReport(@Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverId') driverId?: string,) {
+    return this.ownerService.getCancellationReport({
+      from,
+      to,
+      driverId,
+    });
+  }
+
+  // Earning Report
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/earnings')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverId', required: false })
+  getEarningsReport( @Query('from') from?: string, @Query('to') to?: string, 
+  @Query('driverId') driverId?: string, ) {
+    return this.ownerService.getDriverPaymentSummary(
+      undefined,
+      undefined,
+      from ? new Date(from) : undefined,
+      to ? new Date(to) : undefined,
+      driverId
+    );
+  }
+
 }

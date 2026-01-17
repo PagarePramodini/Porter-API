@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, InternalServerErrorException, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as bcrypt from 'bcryptjs';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { Owner, OwnerDocument } from './schemas/owner.schema';
@@ -670,7 +670,7 @@ export class OwnerService {
   }
 
   // 13. Driver Payment (MONTH-WISE)
-  async getDriverPaymentSummary(month?: number, year?: number) {
+  async getDriverPaymentSummary(month?: number, year?: number, from?: Date, to?: Date, driverId?: string,) {
     // Default → current month & year
     const now = new Date();
     const selectedMonth = month ?? now.getMonth() + 1; // 1-12
@@ -680,7 +680,19 @@ export class OwnerService {
     const startOfMonth = new Date(selectedYear, selectedMonth - 1, 1, 0, 0, 0);
     const endOfMonth = new Date(selectedYear, selectedMonth, 0, 23, 59, 59, 999);
 
+    // OPTIONAL OVERRIDE (Reports only)
+    const startDate = from ?? startOfMonth;
+    const endDate = to ?? endOfMonth;
+
+    // Optional driver filter
+    const driverMatch = driverId
+      ? [{ $match: { _id: new Types.ObjectId(driverId) } }]
+      : [];
+
     const data = await this.driverModel.aggregate([
+      // Optional driver filter (ONLY if passed)
+      ...driverMatch,
+
       // 1️⃣ Active drivers
       {
         $match: { isDeleted: { $ne: true } },
@@ -698,13 +710,13 @@ export class OwnerService {
                   $and: [
                     {
                       $eq: [
-                        { $toObjectId: '$driverId' }, // 🔥 FIX
+                        { $toObjectId: '$driverId' },
                         '$$driverId'
                       ],
                     },
                     { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
-                    { $gte: ['$tripEndTime', startOfMonth] },
-                    { $lte: ['$tripEndTime', endOfMonth] },
+                    { $gte: ['$tripEndTime', startDate] },
+                    { $lte: ['$tripEndTime', endDate] },
                   ],
                 },
               },
@@ -726,8 +738,8 @@ export class OwnerService {
                   $and: [
                     { $eq: ['$driverId', '$$driverId'] },
                     { $eq: ['$status', 'APPROVED'] },
-                    { $gte: ['$createdAt', startOfMonth] },
-                    { $lte: ['$createdAt', endOfMonth] },
+                    { $gte: ['$createdAt', startDate] },
+                    { $lte: ['$createdAt', endDate] },
                   ],
                 },
               },
@@ -756,6 +768,17 @@ export class OwnerService {
           withdrawalAmount: {
             $sum: '$monthlyWithdrawals.amount',
           },
+
+          // NEW (Earnings Report)
+          totalFare: {
+            $sum: '$monthlyTrips.finalFare',
+          },
+          platformCommission: {
+            $sum: '$monthlyTrips.platformCommission',
+          },
+          driverEarning: {
+            $sum: '$monthlyTrips.driverEarning',
+          },
         },
       },
 
@@ -771,5 +794,213 @@ export class OwnerService {
       data,
     };
   }
+
+  // 14. Admin Panel Reports
+  async getDriverPerformanceReport(filters: {
+    from?: string;
+    to?: string;
+    driverId?: string;
+  }) {
+    const matchTrips: any = {};
+
+    // Date filter → based on CREATED booking
+    if (filters.from || filters.to) {
+      matchTrips.createdAt = {};
+      if (filters.from) matchTrips.createdAt.$gte = new Date(filters.from);
+      if (filters.to) matchTrips.createdAt.$lte = new Date(filters.to);
+    }
+
+    return this.driverModel.aggregate([
+      // Optional driver filter
+      ...(filters.driverId
+        ? [{ $match: { _id: new Types.ObjectId(filters.driverId) } }]
+        : []),
+
+      {
+        $lookup: {
+          from: 'bookings',
+          let: { driverId: { $toString: '$_id' } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$driverId', '$$driverId'] },
+                ...matchTrips,
+              },
+            },
+          ],
+          as: 'trips',
+        },
+      },
+
+      {
+        $project: {
+          driverName: { $concat: ['$firstName', ' ', '$lastName'] },
+          Status: '$isOnline', // ✅ ACTIVE / INACTIVE
+          totalTrips: { $size: '$trips' },
+          cancelledTrips: {
+            $size: {
+              $filter: {
+                input: '$trips',
+                as: 't',
+                cond: { $eq: ['$$t.status', 'CANCELLED'] },
+              },
+            },
+          },
+          acceptanceRate: {
+            $cond: [
+              { $gt: [{ $size: '$trips' }, 0] },
+              {
+                $multiply: [
+                  {
+                    $divide: [
+                      {
+                        $size: {
+                          $filter: {
+                            input: '$trips',
+                            as: 't',
+                            cond: { $ne: ['$$t.status', 'CANCELLED'] },
+                          },
+                        },
+                      },
+                      { $size: '$trips' },
+                    ],
+                  },
+                  100,
+                ],
+              },
+              0,
+            ],
+          },
+        },
+      },
+    ]);
+  }
+
+  // Trip Report
+  async getTripReport(filters: {
+    from?: string;
+    to?: string;
+    driverId?: string;
+  }) {
+    const match: any = {};
+
+    if (filters.from || filters.to) {
+      match.createdAt = {};
+      if (filters.from) match.createdAt.$gte = new Date(filters.from);
+      if (filters.to) match.createdAt.$lte = new Date(filters.to);
+    }
+
+    if (filters.driverId) {
+      match.driverId = filters.driverId; // stored as string ✔
+    }
+
+    return this.bookingModel.aggregate([
+      { $match: match },
+
+      {
+        $lookup: {
+          from: 'drivers',
+          let: { driverId: { $toObjectId: '$driverId' } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$_id', '$$driverId'] },
+              },
+            },
+          ],
+          as: 'driver',
+        },
+      },
+
+      { $unwind: { path: '$driver', preserveNullAndEmptyArrays: true } },
+
+
+      {
+        $project: {
+          tripId: '$_id',
+          tripDate: '$createdAt',
+          tripStartTime: 1,
+          tripEndTime: 1,
+          pickupLocation: {
+            $concat: ['Pickup Location - ', '$city'],
+          },
+
+          dropLocation: {
+            $concat: ['Drop Location - ', '$city'],
+          },
+          driverName: {
+            $cond: [
+              { $ifNull: ['$driver', false] },
+              { $concat: ['$driver.firstName', ' ', '$driver.lastName'] },
+              'Not Assigned',
+            ],
+          },
+          city: 1,
+          status: 1,
+          finalFare: 1,
+          driverEarning: 1,
+        },
+      },
+    ]);
+  }
+
+  // Cancallation Report
+  async getCancellationReport(filters: {
+  from?: string;
+  to?: string;
+  driverId?: string;
+}) {
+  const match: any = { status: 'CANCELLED' };
+
+  if (filters.from || filters.to) {
+    match.createdAt = {};
+    if (filters.from) match.createdAt.$gte = new Date(filters.from);
+    if (filters.to) match.createdAt.$lte = new Date(filters.to);
+  }
+
+  if (filters.driverId) match.driverId = filters.driverId;
+  
+  return this.bookingModel.aggregate([
+    { $match: match },
+
+    {
+      $lookup: {
+        from: 'drivers',
+        let: { driverId: { $toObjectId: '$driverId' } },
+        pipeline: [
+          {
+            $match: {
+              $expr: { $eq: ['$_id', '$$driverId'] },
+            },
+          },
+        ],
+        as: 'driver',
+      },
+    },
+
+    { $unwind: '$driver' },
+
+    {
+      $group: {
+        _id: '$driver._id',
+        driverName: {
+          $first: {
+            $concat: ['$driver.firstName', ' ', '$driver.lastName'],
+          },
+        },
+        count: { $sum: 1 },
+      },
+    },
+
+    {
+      $project: {
+        _id: 0,
+        driverName: 1,
+        count: 1,
+      },
+    },
+  ]);
+}
+
 
 }
