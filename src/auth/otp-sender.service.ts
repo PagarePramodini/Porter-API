@@ -9,7 +9,7 @@ export class OtpSenderService {
   private readonly baseUrl = process.env.CLOUD_WHATSAPP_BASE_URL;
 
   async sendWhatsappOtp(mobile: string, otp: string) {
-    const message = `🔐 Your OTP is ${otp}\n\nValid for 5 minutes.\n\n— Team AnyGo`;
+    const message = `Your OTP is ${otp}\n\nValid for 5 minutes.\n\n— Team AnyGo`;
 
     if (!this.apiKey || !this.baseUrl) {
       // DEV fallback (same behavior as before)
