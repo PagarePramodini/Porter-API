@@ -1,14 +1,20 @@
-import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put, Query } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Req, UseGuards, Put, Query, Res } from '@nestjs/common';
 import { ApiBearerAuth, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { CreateOwnerDto } from './dto/create-owner.dto';
 import { OwnerService } from './owner.service';
 import { OwnerJwtGuard } from 'src/master/owner-jwt.guard';
 import { UpdateProfileDto } from './dto/profile-update.dto';
+import type { Response } from 'express';
+import { ReportType } from './dto/report-type.dto';
+import { ExportType } from './dto/export-type.dto';
+import { ReportExportService } from './reports/report-export.service';
 
 @ApiTags('Admin')
 @Controller('owner')
 export class OwnerController {
-  constructor(private readonly ownerService: OwnerService) { }
+  constructor(private readonly ownerService: OwnerService,
+    private readonly reportExportService: ReportExportService,
+  ) { }
 
   @Post('register')
   async register(@Body() createOwnerDto: CreateOwnerDto) {
@@ -92,7 +98,7 @@ export class OwnerController {
   // Approve withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Patch(':id/approve')
+  @Patch(':id/approve-withdrawal')
   approveWithdrawal(@Param('id') withdrawalId: string) {
     return this.ownerService.approveWithdrawal(withdrawalId);
   }
@@ -100,7 +106,7 @@ export class OwnerController {
   // Reject withdrawal
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
-  @Patch(':id/reject')
+  @Patch(':id/reject-withdrawal')
   rejectWithdrawal(@Param('id') withdrawalId: string) {
     return this.ownerService.rejectWithdrawal(withdrawalId);
   }
@@ -139,7 +145,7 @@ export class OwnerController {
   updateProfile(@Req() req, @Body() dto: UpdateProfileDto) {
     return this.ownerService.updateProfile(req.owner.userId, dto);
   }
-  
+
   // Driver Payment Summary 
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
@@ -148,7 +154,7 @@ export class OwnerController {
   @ApiQuery({ name: 'year', required: false })
   getDriverPayments(
     @Query('month') month?: number,
-    @Query('year') year?: number, 
+    @Query('year') year?: number,
   ) {
     return this.ownerService.getDriverPaymentSummary(
       month ? Number(month) : undefined,
@@ -162,13 +168,13 @@ export class OwnerController {
   @Get('reports/driver-performance')
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
-  @ApiQuery({ name: 'driverId', required: false })
-  getDriverPerformance( @Query('from') from?: string, @Query('to') to?: string,
-    @Query('driverId') driverId?: string,) {
+  @ApiQuery({ name: 'driverName', required: false })
+  getDriverPerformance(@Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverName') driverName?: string,) {
     return this.ownerService.getDriverPerformanceReport({
       from,
       to,
-      driverId,
+      driverName,
     });
   }
 
@@ -178,13 +184,13 @@ export class OwnerController {
   @Get('reports/trips')
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
-  @ApiQuery({ name: 'driverId', required: false })
+  @ApiQuery({ name: 'driverName', required: false })
   getTripReport(@Query('from') from?: string, @Query('to') to?: string,
-    @Query('driverId') driverId?: string,) {
+    @Query('driverName') driverName?: string,) {
     return this.ownerService.getTripReport({
       from,
       to,
-      driverId,
+      driverName,
     });
   }
 
@@ -194,13 +200,13 @@ export class OwnerController {
   @Get('reports/cancellations')
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
-  @ApiQuery({ name: 'driverId', required: false })
+  @ApiQuery({ name: 'driverName', required: false })
   getCancellationReport(@Query('from') from?: string, @Query('to') to?: string,
-    @Query('driverId') driverId?: string,) {
+    @Query('driverName') driverName?: string,) {
     return this.ownerService.getCancellationReport({
       from,
       to,
-      driverId,
+      driverName,
     });
   }
 
@@ -210,16 +216,82 @@ export class OwnerController {
   @Get('reports/earnings')
   @ApiQuery({ name: 'from', required: false })
   @ApiQuery({ name: 'to', required: false })
-  @ApiQuery({ name: 'driverId', required: false })
-  getEarningsReport( @Query('from') from?: string, @Query('to') to?: string, 
-  @Query('driverId') driverId?: string, ) {
+  @ApiQuery({ name: 'driverName', required: false })
+  getEarningsReport(@Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverName') driverName?: string,) {
     return this.ownerService.getDriverPaymentSummary(
       undefined,
       undefined,
       from ? new Date(from) : undefined,
       to ? new Date(to) : undefined,
-      driverId
+      driverName,
     );
   }
+
+  // Export / Download Reports
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/export')
+  @ApiQuery({ name: 'report', enum: ReportType, required: false })
+  @ApiQuery({ name: 'export', enum: ExportType, required: false })
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverName', required: false })
+  async exportReports(
+    @Query('report') report: ReportType,
+    @Query('export') exportType: ExportType,
+    @Res({ passthrough: false }) res: Response,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('driverName') driverName?: string,
+  ) {
+  let data: any[] = [];
+  let title = '';
+
+  const filters = { from, to, driverName };
+
+  switch (report) {
+    case ReportType.DRIVER_PERFORMANCE:
+      data = await this.ownerService.getDriverPerformanceData(filters);
+      title = 'Driver Performance Report';
+      break;
+
+    case ReportType.TRIPS:
+      data = await this.ownerService.getTripReportData(filters);
+      title = 'Trip Report';
+      break;
+
+    case ReportType.EARNINGS:
+      data = await this.ownerService.getEarningsReportData(filters);
+      title = 'Earnings Report';
+      break;
+
+    case ReportType.CANCELLATIONS:
+      data = await this.ownerService.getCancellationReportData(filters);
+      title = 'Cancellation Report';
+      break;
+  }
+
+  const buffer = await this.reportExportService.export(
+    exportType,
+    data,
+    title,
+  );
+
+  const contentTypeMap = {
+    pdf: 'application/pdf',
+    csv: 'text/csv',
+    excel:
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  };
+
+  res.setHeader('Content-Type', contentTypeMap[exportType]);
+  res.setHeader(
+    'Content-Disposition',
+    `attachment; filename=${report}.${exportType}`,
+  );
+
+  res.send(buffer);
+}
 
 }

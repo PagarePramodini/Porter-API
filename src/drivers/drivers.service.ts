@@ -1,4 +1,4 @@
-import { BadRequestException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, forwardRef, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Driver, DriverDocument } from './schemas/driver.schema';
@@ -187,6 +187,12 @@ export class DriversService {
 
     if (!driver) {
       throw new NotFoundException('Driver not found');
+    }
+
+    if (dto.isOnline && !driver.documents?.verified) {
+      throw new ForbiddenException(
+        'Documents not verified. Cannot go online.'
+      );
     }
 
     // ✅ check DB location instead of DTO
@@ -786,7 +792,15 @@ export class DriversService {
     // ─────────────────────────────────────────────
     // 3️. Wallet Balance
     // ─────────────────────────────────────────────
-    const driver = await this.driverModel.findById(driverId).lean();
+    // const driver = await this.driverModel.findById(driverId).lean();
+    const driver = await this.driverModel
+      .findById(driverId)
+      .select('documents isOnline isAvailable walletBalance')
+      .lean();
+
+    if (!driver) {
+      throw new NotFoundException('Driver not found');
+    }
 
     // ─────────────────────────────────────────────
     // 4️. Ongoing Trip (if any)
@@ -810,6 +824,13 @@ export class DriversService {
     // 6. Final Dashboard Response
     // ─────────────────────────────────────────────
     return {
+      driver: {
+        isOnline: driver.isOnline,
+        isAvailable: driver.isAvailable,
+        documents: {
+          verified: driver.documents?.verified ?? false,
+        },
+      },
       todaySummary: {
         earnings: todayEarnings,
         trips: todayTripCount,

@@ -9,6 +9,7 @@ import { Booking, BookingSchema } from 'src/customers/booking/schemas/booking.sc
 import { Withdraw, WithdrawSchema } from 'src/drivers/schemas/withdraw.schema';
 import { JwtModule } from '@nestjs/jwt';
 import { Customer, CustomerSchema } from 'src/customers/schemas/customer.schema';
+import { ReportExportService } from './reports/report-export.service';
 
 @Module({
   imports: [MongooseModule.forFeature([{ name: Owner.name, schema: OwnerSchema },
@@ -16,7 +17,7 @@ import { Customer, CustomerSchema } from 'src/customers/schemas/customer.schema'
     { name: Withdraw.name, schema: WithdrawSchema },{ name: Customer.name, schema: CustomerSchema }]),
   forwardRef(() => AuthModule),JwtModule], 
   controllers: [OwnerController],
-  providers: [OwnerService],
+  providers: [OwnerService,ReportExportService,],
   exports: [OwnerService],
 })
 export class OwnerModule {}

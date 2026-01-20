@@ -670,7 +670,7 @@ export class OwnerService {
   }
 
   // 13. Driver Payment (MONTH-WISE)
-  async getDriverPaymentSummary(month?: number, year?: number, from?: Date, to?: Date, driverId?: string,) {
+  async getDriverPaymentSummary(month?: number, year?: number, from?: Date, to?: Date, driverName?: string,) {
     // Default → current month & year
     const now = new Date();
     const selectedMonth = month ?? now.getMonth() + 1; // 1-12
@@ -685,9 +685,12 @@ export class OwnerService {
     const endDate = to ?? endOfMonth;
 
     // Optional driver filter
-    const driverMatch = driverId
-      ? [{ $match: { _id: new Types.ObjectId(driverId) } }]
-      : [];
+    const driverIds = await this.getDriverIdsByName(driverName);
+
+    const driverMatch =
+      driverIds.length > 0
+        ? [{ $match: { _id: { $in: driverIds } } }]
+        : [];
 
     const data = await this.driverModel.aggregate([
       // Optional driver filter (ONLY if passed)
@@ -710,9 +713,7 @@ export class OwnerService {
                   $and: [
                     {
                       $eq: [
-                        { $toObjectId: '$driverId' },
-                        '$$driverId'
-                      ],
+                        { $toObjectId: '$driverId' }, '$$driverId'],
                     },
                     { $eq: ['$status', BookingStatus.TRIP_COMPLETED] },
                     { $gte: ['$tripEndTime', startDate] },
@@ -799,7 +800,7 @@ export class OwnerService {
   async getDriverPerformanceReport(filters: {
     from?: string;
     to?: string;
-    driverId?: string;
+    driverName?: string;
   }) {
     const matchTrips: any = {};
 
@@ -810,11 +811,15 @@ export class OwnerService {
       if (filters.to) matchTrips.createdAt.$lte = new Date(filters.to);
     }
 
+    const driverIds = await this.getDriverIdsByName(filters.driverName);
+
+    const driverMatch =
+      driverIds.length > 0
+        ? [{ $match: { _id: { $in: driverIds } } }]
+        : [];
+
     return this.driverModel.aggregate([
-      // Optional driver filter
-      ...(filters.driverId
-        ? [{ $match: { _id: new Types.ObjectId(filters.driverId) } }]
-        : []),
+      ...driverMatch,
 
       {
         $lookup: {
@@ -835,7 +840,7 @@ export class OwnerService {
       {
         $project: {
           driverName: { $concat: ['$firstName', ' ', '$lastName'] },
-          Status: '$isOnline', // ✅ ACTIVE / INACTIVE
+          Status: '$isOnline', // ACTIVE / INACTIVE
           totalTrips: { $size: '$trips' },
           cancelledTrips: {
             $size: {
@@ -880,7 +885,7 @@ export class OwnerService {
   async getTripReport(filters: {
     from?: string;
     to?: string;
-    driverId?: string;
+    driverName?: string;
   }) {
     const match: any = {};
 
@@ -890,8 +895,11 @@ export class OwnerService {
       if (filters.to) match.createdAt.$lte = new Date(filters.to);
     }
 
-    if (filters.driverId) {
-      match.driverId = filters.driverId; // stored as string ✔
+    const driverIds = await this.getDriverIdsByName(filters.driverName);
+    const driverIdStrings = driverIds.map(id => id.toString());
+
+    if (driverIdStrings.length) {
+      match.driverId = { $in: driverIdStrings };
     }
 
     return this.bookingModel.aggregate([
@@ -914,7 +922,6 @@ export class OwnerService {
 
       { $unwind: { path: '$driver', preserveNullAndEmptyArrays: true } },
 
-
       {
         $project: {
           tripId: '$_id',
@@ -922,11 +929,11 @@ export class OwnerService {
           tripStartTime: 1,
           tripEndTime: 1,
           pickupLocation: {
-            $concat: ['Pickup Location - ', '$city'],
+            $concat: ['$city'],
           },
 
           dropLocation: {
-            $concat: ['Drop Location - ', '$city'],
+            $concat: ['$city'],
           },
           driverName: {
             $cond: [
@@ -948,7 +955,7 @@ export class OwnerService {
   async getCancellationReport(filters: {
     from?: string;
     to?: string;
-    driverId?: string;
+    driverName?: string;
   }) {
     const match: any = { status: 'CANCELLED' };
 
@@ -958,7 +965,12 @@ export class OwnerService {
       if (filters.to) match.createdAt.$lte = new Date(filters.to);
     }
 
-    if (filters.driverId) match.driverId = filters.driverId;
+    const driverIds = await this.getDriverIdsByName(filters.driverName);
+    const driverIdStrings = driverIds.map(id => id.toString());
+
+    if (driverIdStrings.length) {
+      match.driverId = { $in: driverIdStrings };
+    }
 
     return this.bookingModel.aggregate([
       { $match: match },
@@ -1002,5 +1014,52 @@ export class OwnerService {
     ]);
   }
 
+  // 🔹 DRIVER PERFORMANCE DATA
+  async getDriverPerformanceData(filters): Promise<any[]> {
+    return this.getDriverPerformanceReport(filters);
+  }
+
+  // 🔹 TRIP REPORT DATA
+  async getTripReportData(filters): Promise<any[]> {
+    return this.getTripReport(filters);
+  }
+
+  // 🔹 CANCELLATION DATA
+  async getCancellationReportData(filters): Promise<any[]> {
+    return await this.getCancellationReport(filters);
+  }
+
+  // 🔹 EARNINGS DATA (only data array)
+  async getEarningsReportData(filters): Promise<any[]> {
+    const result = await this.getDriverPaymentSummary(
+      undefined,
+      undefined,
+      filters.from ? new Date(filters.from) : undefined,
+      filters.to ? new Date(filters.to) : undefined,
+      filters.driverName,
+    );
+    return result.data;
+  }
+
+  // Resolve driverIds from driverName (frontend-friendly)
+  private async getDriverIdsByName(driverName?: string): Promise<Types.ObjectId[]> {
+    if (!driverName) return [];
+
+    const parts = driverName.trim().split(' ');
+    const firstName = parts[0];
+    const lastName = parts.slice(1).join(' ');
+
+    const drivers = await this.driverModel.find(
+      {
+        firstName: new RegExp(`^${firstName}`, 'i'),
+        ...(lastName && {
+          lastName: new RegExp(`^${lastName}`, 'i'),
+        }),
+      },
+      { _id: 1 }
+    );
+
+    return drivers.map(d => d._id);
+  }
 
 }
