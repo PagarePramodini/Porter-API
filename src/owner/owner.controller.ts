@@ -263,58 +263,58 @@ export class OwnerController {
     @Query('to') to?: string,
     @Query('driverName') driverName?: string,
   ) {
-  let data: any[] = [];
-  let title = '';
+    let data: any[] = [];
+    let title = '';
 
-  const filters = { from, to, driverName };
+    const filters = { from, to, driverName };
 
-  switch (report) {
-    case ReportType.DRIVER_PERFORMANCE:
-      data = await this.ownerService.getDriverPerformanceData(filters);
-      title = 'Driver Performance Report';
-      break;
+    switch (report) {
+      case ReportType.DRIVER_PERFORMANCE:
+        data = await this.ownerService.getDriverPerformanceData(filters);
+        title = 'Driver Performance Report';
+        break;
 
-    case ReportType.TRIPS:
-      data = await this.ownerService.getTripReportData(filters);
-      title = 'Trip Report';
-      break;
+      case ReportType.TRIPS:
+        data = await this.ownerService.getTripReportData(filters);
+        title = 'Trip Report';
+        break;
 
-    case ReportType.EARNINGS:
-      data = await this.ownerService.getEarningsReportData(filters);
-      title = 'Earnings Report';
-      break;
+      case ReportType.EARNINGS:
+        data = await this.ownerService.getEarningsReportData(filters);
+        title = 'Earnings Report';
+        break;
 
-    case ReportType.CANCELLATIONS:
-      data = await this.ownerService.getCancellationReportData(filters);
-      title = 'Cancellation Report';
-      break;
+      case ReportType.CANCELLATIONS:
+        data = await this.ownerService.getCancellationReportData(filters);
+        title = 'Cancellation Report';
+        break;
 
-    case ReportType.PAYMENTS:
-      data = await this.ownerService.getPaymentReportData(filters);
-      title = 'Payment Report';
-      break;
+      case ReportType.PAYMENTS:
+        data = await this.ownerService.getPaymentReportData(filters);
+        title = 'Payment Report';
+        break;
+    }
+
+    const buffer = await this.reportExportService.export(
+      exportType,
+      data,
+      title,
+    );
+
+    const contentTypeMap = {
+      pdf: 'application/pdf',
+      csv: 'text/csv',
+      excel:
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    };
+
+    res.setHeader('Content-Type', contentTypeMap[exportType]);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename=${report}.${exportType}`,
+    );
+
+    res.send(buffer);
   }
-
-  const buffer = await this.reportExportService.export(
-    exportType,
-    data,
-    title,
-  );
-
-  const contentTypeMap = {
-    pdf: 'application/pdf',
-    csv: 'text/csv',
-    excel:
-      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  };
-
-  res.setHeader('Content-Type', contentTypeMap[exportType]);
-  res.setHeader(
-    'Content-Disposition',
-    `attachment; filename=${report}.${exportType}`,
-  );
-
-  res.send(buffer);
-}
 
 }
