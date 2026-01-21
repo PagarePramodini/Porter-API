@@ -296,25 +296,31 @@ export class OwnerController {
     }
 
     const buffer = await this.reportExportService.export(
+      report, 
       exportType,
       data,
       title,
     );
 
-    const contentTypeMap = {
+    const extensionMap = {
+      pdf: 'pdf',
+      csv: 'csv',
+      excel: 'xlsx',
+    };
+
+    const contentTypeMap: Record<string, string> = {
       pdf: 'application/pdf',
       csv: 'text/csv',
-      excel:
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      excel: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
     };
 
     res.setHeader('Content-Type', contentTypeMap[exportType]);
     res.setHeader(
       'Content-Disposition',
-      `attachment; filename=${report}.${exportType}`,
+      `attachment; filename=${report}.${extensionMap[exportType]}`,
     );
 
-    res.send(buffer);
+    res.end(buffer);
   }
 
 }
