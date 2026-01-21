@@ -951,7 +951,7 @@ export class OwnerService {
     ]);
   }
 
-  // Cancallation Report
+  // Cancellation Report
   async getCancellationReport(filters: {
     from?: string;
     to?: string;
@@ -1014,6 +1014,108 @@ export class OwnerService {
     ]);
   }
 
+  // Payment Report
+  async getPaymentReport(filters: {
+    from?: string;
+    to?: string;
+    driverName?: string;
+  }) {
+    const match: any = {
+      status: BookingStatus.TRIP_COMPLETED,
+    };
+
+    // Date filter
+    if (filters.from || filters.to) {
+      match.tripEndTime = {};
+      if (filters.from) match.tripEndTime.$gte = new Date(filters.from);
+      if (filters.to) match.tripEndTime.$lte = new Date(filters.to);
+    }
+
+    // Driver filter (via name)
+    const driverIds = await this.getDriverIdsByName(filters.driverName);
+    if (driverIds.length) {
+      match.driverId = { $in: driverIds.map(id => id.toString()) };
+    }
+
+    return this.bookingModel.aggregate([
+      { $match: match },
+
+      // 🔹 Join Customer
+      {
+        $lookup: {
+          from: 'customers',
+          let: { customerId: { $toObjectId: '$customerId' } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$_id', '$$customerId'] },
+              },
+            },
+          ],
+          as: 'customer',
+        },
+      },
+      { $unwind: { path: '$customer', preserveNullAndEmptyArrays: true } },
+
+      // 🔹 Join Driver
+      {
+        $lookup: {
+          from: 'drivers',
+          let: { driverId: { $toObjectId: '$driverId' } },
+          pipeline: [
+            {
+              $match: {
+                $expr: { $eq: ['$_id', '$$driverId'] },
+              },
+            },
+          ],
+          as: 'driver',
+        },
+      },
+      { $unwind: { path: '$driver', preserveNullAndEmptyArrays: true } },
+
+      // 🔹 Final Projection
+      {
+        $project: {
+          tripId: '$_id',
+          tripDate: '$tripEndTime',
+
+          customerName: {
+            $cond: [
+              { $ifNull: ['$customer', false] },
+              { $concat: ['$customer.firstName', ' ', '$customer.lastName'] },
+              'Unknown',
+            ],
+          },
+
+          driverName: {
+            $cond: [
+              { $ifNull: ['$driver', false] },
+              { $concat: ['$driver.firstName', ' ', '$driver.lastName'] },
+              'Not Assigned',
+            ],
+          },
+
+          vehicleType: 1,
+          finalFare: 1,
+
+          paymentMethod: 1,
+          paymentStatus: 1,
+
+          transactionId: {
+            $cond: [
+              { $eq: ['$paymentMethod', 'ONLINE'] },
+              '$razorpayPaymentId',
+              null,
+            ],
+          },
+        },
+      },
+
+      { $sort: { tripDate: -1 } },
+    ]);
+  }
+
   // 🔹 DRIVER PERFORMANCE DATA
   async getDriverPerformanceData(filters): Promise<any[]> {
     return this.getDriverPerformanceReport(filters);
@@ -1039,6 +1141,11 @@ export class OwnerService {
       filters.driverName,
     );
     return result.data;
+  }
+
+  // 🔹 Payment Report DATA
+  async getPaymentReportData(filters): Promise<any[]> {
+    return await this.getPaymentReport(filters);
   }
 
   // Resolve driverIds from driverName (frontend-friendly)

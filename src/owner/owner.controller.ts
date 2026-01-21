@@ -228,6 +228,24 @@ export class OwnerController {
     );
   }
 
+  // Payment Report
+  @ApiBearerAuth()
+  @UseGuards(OwnerJwtGuard)
+  @Get('reports/payments')
+  @ApiQuery({ name: 'from', required: false })
+  @ApiQuery({ name: 'to', required: false })
+  @ApiQuery({ name: 'driverName', required: false })
+  getPaymentReport(
+    @Query('from') from?: string, @Query('to') to?: string,
+    @Query('driverName') driverName?: string,
+  ) {
+    return this.ownerService.getPaymentReport({
+      from,
+      to,
+      driverName
+    });
+  }
+
   // Export / Download Reports
   @ApiBearerAuth()
   @UseGuards(OwnerJwtGuard)
@@ -269,6 +287,11 @@ export class OwnerController {
     case ReportType.CANCELLATIONS:
       data = await this.ownerService.getCancellationReportData(filters);
       title = 'Cancellation Report';
+      break;
+
+    case ReportType.PAYMENTS:
+      data = await this.ownerService.getPaymentReportData(filters);
+      title = 'Payment Report';
       break;
   }
 

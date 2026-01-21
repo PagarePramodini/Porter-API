@@ -3,4 +3,5 @@ export enum ReportType {
   TRIPS = 'trips',
   EARNINGS = 'earnings',
   CANCELLATIONS = 'cancellations',
+  PAYMENTS = 'payments',
 }
